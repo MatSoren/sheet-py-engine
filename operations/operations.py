@@ -605,6 +605,24 @@ class Hlookup(Operation):
         return found if approximated else None
 
 
+# one token of an Excel format code: literals ("..", \x, [..]), date codes, digit placeholders
+FORMAT_TOKEN = re.compile(
+    r'"[^"]*"|\\.|\[[^\]]*\]|am/pm|a/p|yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|[0#?]|.',
+    re.IGNORECASE,
+)
+DATE_CODES = {"yyyy", "yy", "mmmm", "mmm", "mm", "m", "dddd", "ddd", "dd", "d", "hh", "h", "ss", "s", "am/pm", "a/p"}
+
+
+def format_literal(token):
+    if token.startswith('"'):
+        return token[1:-1]
+    if token.startswith("\\"):
+        return token[1:]
+    if token.startswith("["):
+        return ""  # [Red], [$-409], ...
+    return token
+
+
 class Text(Operation):
     def __str__(self):
         return "Text"
@@ -617,35 +635,97 @@ class Text(Operation):
         # evaluated here, not in __init__, so TEXT follows changes to its source cell
         element = self.element.operate()
         _format = self.format.operate()
-        if isinstance(element, (int, float)) and not isinstance(element, bool):
-            if not re.search(r"[YMDHS]", _format, re.IGNORECASE):
-                return self._number_text(element, _format)
-            element = datetime(1899, 12, 30) + timedelta(days=element)  # a date is a serial number
-
-        if isinstance(element, (date, datetime)):
-            formated_date = (
-                _format.replace("YYYY", "%Y")
-                .replace("YY", "%y")
-                .replace("MM", "%m")
-                .replace("DDDD", "%A")
-                .replace("DDD", "%a")
-                .replace("DD", "%d")
-                .replace("hh", "%H")
-                .replace("mm", "%M")
-                .replace("ss", "%S")
-            )
-            return element.strftime(formated_date)
-        return element
+        if isinstance(element, bool):
+            return "TRUE" if element else "FALSE"
+        if isinstance(element, str):
+            return element
+        if element is None:
+            element = 0
+        sections = [[]]
+        for token in FORMAT_TOKEN.findall(_format):
+            if token == ";":
+                sections.append([])
+            else:
+                sections[-1].append(token)
+        is_number = not isinstance(element, (date, datetime))
+        if is_number and element < 0 and len(sections) > 1:
+            tokens, element, sign = sections[1], -element, ""  # the section writes its own sign
+        elif is_number and element == 0 and len(sections) > 2:
+            tokens, sign = sections[2], ""
+        else:
+            tokens, sign = sections[0], "-" if is_number and element < 0 else ""
+        if any(token.lower() in DATE_CODES for token in tokens):
+            if is_number:
+                element = datetime(1899, 12, 30) + timedelta(days=element)  # serial date
+            return self._date_text(element, tokens)
+        if not is_number:  # a date shown with a number format: its serial number
+            element = _comparison_key(element)[1]
+        return self._number_text(abs(element), tokens, sign)
 
     @staticmethod
-    def _number_text(value, _format):
-        # ponytail: 0 / 0.00 / #,##0.00 / 0% style formats only; no sections, no literals
-        percent = "%" in _format
-        if percent:
-            value *= 100
-        decimals = len(_format.split(".")[1].rstrip("%")) if "." in _format else 0
-        rounded = Decimal(repr(value)).quantize(Decimal(1).scaleb(-decimals), ROUND_HALF_UP)
-        return f"{rounded:{',' if ',' in _format else ''}f}" + ("%" if percent else "")
+    def _date_text(moment, tokens):
+        if not isinstance(moment, datetime):
+            moment = datetime(moment.year, moment.month, moment.day)
+        twelve_hour = any(token.lower() in ("am/pm", "a/p") for token in tokens)
+        codes = [(index, token.lower()) for index, token in enumerate(tokens) if token.lower() in DATE_CODES]
+        out = [format_literal(token) for token in tokens]
+        for position, (index, code) in enumerate(codes):
+            if code in ("m", "mm"):  # minutes right after an hour or right before seconds
+                before = codes[position - 1][1] if position > 0 else ""
+                after = codes[position + 1][1] if position + 1 < len(codes) else ""
+                if before in ("h", "hh") or after in ("s", "ss"):
+                    code = "minute" + code
+            hour = (moment.hour % 12 or 12) if twelve_hour else moment.hour
+            out[index] = {
+                "yyyy": f"{moment.year:04d}", "yy": f"{moment.year % 100:02d}",
+                "mmmm": moment.strftime("%B"), "mmm": moment.strftime("%b"),
+                "mm": f"{moment.month:02d}", "m": str(moment.month),
+                "minutemm": f"{moment.minute:02d}", "minutem": str(moment.minute),
+                "dddd": moment.strftime("%A"), "ddd": moment.strftime("%a"),
+                "dd": f"{moment.day:02d}", "d": str(moment.day),
+                "hh": f"{hour:02d}", "h": str(hour),
+                "ss": f"{moment.second:02d}", "s": str(moment.second),
+                "am/pm": "AM" if moment.hour < 12 else "PM", "a/p": "A" if moment.hour < 12 else "P",
+            }[code]
+        return "".join(out)
+
+    @staticmethod
+    def _number_text(value, tokens, sign):
+        """Digit placeholders (0 # ?), '.', ',' (grouping, or /1000 when trailing) and '%'
+        (x100); everything else is copied as a literal.
+
+        ponytail: the digits go where the first placeholder is, so literals between
+        placeholders (000-0000) and '?' space padding are not supported.
+        """
+        if [token.lower() for token in tokens] == list("general"):
+            return sign + to_excel_text(value)
+        body, out, number_at = "", [], None
+        for token in tokens:
+            # '.' may start the number (".00"), ',' only continues it
+            if token in ("0", "#", "?", ".") or (token == "," and number_at is not None):
+                if number_at is None:
+                    number_at = len(out)
+                body += token
+            else:
+                out.append(format_literal(token))
+        if number_at is None:
+            return "".join(out)
+        integer_spec, _, decimal_spec = body.partition(".")
+        # commas closing a part scale by 1000 each: #,##0, / 0.0,,
+        scale_commas = sum(len(spec) - len(spec.rstrip(",")) for spec in (integer_spec, decimal_spec))
+        integer_spec, decimal_spec = integer_spec.rstrip(","), decimal_spec.rstrip(",")
+        number = Decimal(repr(value)) * 100 ** tokens.count("%") / 1000**scale_commas
+        decimals = len(decimal_spec)
+        rounded = number.quantize(Decimal(1).scaleb(-decimals), ROUND_HALF_UP)
+        integer_digits, _, decimal_digits = f"{rounded:f}".partition(".")
+        minimum_digits = integer_spec.count("0")
+        integer_digits = integer_digits.lstrip("0").zfill(minimum_digits)
+        if "," in integer_spec:
+            integer_digits = re.sub(r"(?<=\d)(?=(\d{3})+$)", ",", integer_digits)
+        decimal_digits = decimal_digits.rstrip("0").ljust(decimal_spec.count("0"), "0")
+        text = integer_digits + ("." + decimal_digits if "." in body else "")
+        out.insert(number_at, sign + text)
+        return "".join(out)
 
 
 class IfError(Operation):

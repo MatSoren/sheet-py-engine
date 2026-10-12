@@ -12,7 +12,7 @@ Two layers:
 import ast
 import collections
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 
 from openpyxl import Workbook
 
@@ -532,6 +532,38 @@ EVALUATION_CASES = [
     ('=TEXT(45292,"DD/MM/YYYY")', "01/01/2024"),
     ('=TEXT(45292,"DDDD")', "Monday"),
     ('=TEXT(C1,"0")', "abc"),
+    ('=TEXT(TRUE,"0")', "TRUE"),
+    ('=TEXT(Z99,"0.00")', "0.00"),
+    ('=TEXT(5,"General")', "5"),
+    ('=TEXT(7,"000")', "007"),
+    ('=TEXT(0.5,"#.##")', ".5"),
+    ('=TEXT(1,"0.##")', "1."),
+    ('=TEXT(0,"#")', ""),
+    ('=TEXT(1234567,"#,##0,")', "1,235"),
+    ('=TEXT(1234567,"#,##0.0,,")', "1.2"),
+    ('=TEXT(1500,"$#,##0")', "$1,500"),
+    # literals
+    ('=TEXT(5,"""$""0.00")', "$5.00"),
+    ('=TEXT(3,"0"" kg""")', "3 kg"),
+    ('=TEXT(3,"0\%")', "3%"),
+    ('=TEXT(3,"[Blue]0")', "3"),
+    # sections: positive;negative;zero
+    ('=TEXT(5,"0;(0)")', "5"),
+    ('=TEXT(-5,"0;(0)")', "(5)"),
+    ('=TEXT(-5,"0.0")', "-5.0"),
+    ('=TEXT(0,"0;-0;""cero""")', "cero"),
+    ('=TEXT(0,"0;-0")', "0"),
+    ('=TEXT(-1234.5,"#,##0.00;[Red]-#,##0.00")', "-1,234.50"),
+    # dates and times (serial numbers or date cells)
+    ('=TEXT(45292,"DDD")', "Mon"),
+    ('=TEXT(45292,"d ""de"" mmmm")', "1 de January"),
+    ('=TEXT(45292,"mmm-yy")', "Jan-24"),
+    ('=TEXT(45292,"m/d/yyyy")', "1/1/2024"),
+    ('=TEXT(45292.75,"hh:mm")', "18:00"),
+    ('=TEXT(45292.75,"h:mm AM/PM")', "6:00 PM"),
+    ('=TEXT(45292.5,"yyyy-mm-dd hh:mm:ss")', "2024-01-01 12:00:00"),
+    ('=TEXT(45292,"[$-409]mmm")', "Jan"),
+    ('=TEXT(TODAY(),"0")', str((date.today() - date(1899, 12, 30)).days)),
     # ROUNDUP goes away from zero, ROUNDDOWN toward zero, both ignoring float noise
     ("=ROUNDUP(1.21,1)", 1.3),
     ("=ROUNDUP(-1.21,1)", -1.3),
