@@ -83,6 +83,11 @@ def translate_operand(subtype, value):
     # RANGE: A1, $A$1, A1:B2, Hoja!A1, 'Mi Hoja'!A1:B2
     if "#REF!" in value:
         return repr("#REF!")
+    start, colon, end = value.partition(":")  # sheet names can't contain ':'
+    if "!" in end:
+        if "!" not in start:
+            raise ValueError(f"3D references (Sheet1:Sheet3!A1) not supported: {value}")
+        value = start + colon + end.rpartition("!")[2]  # Hoja!A1:Hoja!B2 -> Hoja!A1:B2
     sheet, _, ref = value.rpartition("!")
     if sheet.startswith("'"):
         sheet = sheet[1:-1].replace("''", "'")

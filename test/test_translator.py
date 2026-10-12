@@ -65,6 +65,10 @@ class TestReferences(TranslationCase):
             ("='Hoja.1'!A1", "_Hoja_1___ref___A1"),
             ("='a ref b'!A1", "_a_ref_b___ref___A1"),
             ("=Hoja!A1+'Otra Hoja'!B2", "_Hoja___ref___A1+_Otra_Hoja___ref___B2"),
+            # sheet repeated on both ends of the range
+            ("=SUM(Hoja!A1:Hoja!B2)", "SUM(_Hoja___ref___A1___range___B2)"),
+            ("=SUM(Hoja!$A$1:Hoja!$B$2)", "SUM(_Hoja___ref___A1___range___B2)"),
+            ("=SUM('Mi Hoja'!A1:'Mi Hoja'!B2)", "SUM(_Mi_Hoja___ref___A1___range___B2)"),
         ])
 
     def test_ref_error(self):
@@ -242,6 +246,12 @@ class TestUnsupported(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "intersection"):
                     formula_to_python(formula)
 
+    def test_3d_references(self):
+        for formula in ["=SUM(Hoja1:Hoja3!A1)", "=SUM('Hoja 1:Hoja 3'!A1:B2)"]:
+            with self.subTest(formula=formula):
+                with self.assertRaisesRegex(ValueError, "3D"):
+                    formula_to_python(formula)
+
     def test_array_constants(self):
         for formula in ["={1,2,3}", "=SUM({1,2;3,4})"]:
             with self.subTest(formula=formula):
@@ -408,6 +418,7 @@ EVALUATION_CASES = [
     ("=SUM('2024 Ventas'!A1:A2)", 300),
     ("='Costos-Fijos'!A2", 2),
     ("=SUM('Costos-Fijos'!A1:A3)", 6),
+    ("=SUM('Costos-Fijos'!A1:'Costos-Fijos'!A3)", 6),
     ("='Año 1'!A1", 7),
     ("='O''Brien'!A1", 5),
     ("='Cost Report'!A1", 11),

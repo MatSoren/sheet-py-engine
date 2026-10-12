@@ -8,3 +8,7 @@ logs.txt
 .vscode/
 .idea/
 .DS_Store
+
+# spreadsheets are local test material; only the generated example is public
+*.xlsx
+!examples/example.xlsx
