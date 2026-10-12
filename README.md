@@ -151,10 +151,6 @@ python -m unittest test.test_translator -v
 - **One workbook per process.** `SheetsManager._sheet_dict` is class-level state and
   `translator` holds a module-level manager, so loading a second workbook writes into the
   same registry as the first.
-- **Excel precedence quirks of `^`.** Python's precedence and associativity are used, so
-  `=-2^2` gives `-4` (Excel: `4`, unary minus binds tighter) and `=2^3^2` gives `512`
-  (Excel: `64`, left-associative). Parenthesize to be safe. `%` combined with `^` works
-  (`=2^50%` is `2^0.5`), since `%` wraps the operand right before it.
 - **Intersection operator, array constants and 3D references** (`=A1:A3 B1:B3`,
   `={1,2,3}`, `=SUM(Sheet1:Sheet3!A1)`) are not
   supported; they raise a `ValueError` naming the formula.
