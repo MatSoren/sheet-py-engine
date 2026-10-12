@@ -174,14 +174,31 @@ class TestOperators(TranslationCase):
 
     def test_prefix(self):
         self.check([
-            ("=-A1", "-A1"),
-            ("=+A1", "+A1"),
-            ("=-1", "-1"),
-            ("=--A1", "--A1"),
-            ("=-(A1+1)", "-(A1+1)"),
-            ("=-SUM(A1:A2)", "-SUM(A1___range___A2)"),
-            ("=1--1", "1--1"),
-            ("=A1*-1", "A1*-1"),
+            ("=-A1", "(-A1)"),
+            ("=+A1", "(+A1)"),
+            ("=-1", "(-1)"),
+            ("=--A1", "(-(-A1))"),
+            ("=-(A1+1)", "(-(A1+1))"),
+            ("=-SUM(A1:A2)", "(-SUM(A1___range___A2))"),
+            ("=1--1", "1-(-1)"),
+            ("=A1*-1", "A1*(-1)"),
+            ("=SUM(-A1,2)", "SUM((-A1),2)"),
+        ])
+
+    def test_power_precedence_and_associativity(self):
+        self.check([
+            ("=-2^2", "(-2)**2"),
+            ("=-A1^2", "(-A1)**2"),
+            ("=2^-1", "2**(-1)"),
+            ("=2^3^2", "(2**3)**2"),
+            ("=2^3^2^2", "((2**3)**2)**2"),
+            ("=1+2^3^2", "1+(2**3)**2"),
+            ("=2^3*2^2", "2**3*2**2"),
+            ("=(2^3)^2", "(2**3)**2"),
+            ("=2^(3^2)", "2**(3**2)"),
+            ("=SUM(2^3^2,2^2)", "SUM((2**3)**2,2**2)"),
+            ("=-SUM(A1)^2", "(-SUM(A1))**2"),
+            ("=2^3%^2", "(2**(3/100))**2"),
         ])
 
     def test_percent(self):
@@ -192,7 +209,7 @@ class TestOperators(TranslationCase):
             ("=A1*10%", "A1*(10/100)"),
             ("=(1+1)%", "((1+1)/100)"),
             ("=SUM(A1:A2)%", "(SUM(A1___range___A2)/100)"),
-            ("=-50%", "-(50/100)"),
+            ("=-50%", "((-50)/100)"),
             ("=50%%", "((50/100)/100)"),
             ("=2^50%", "2**(50/100)"),
             ("=IF(A1>50%,1,0)", "IF(A1>(50/100),1,0)"),
@@ -236,7 +253,7 @@ class TestFunctionsAndArguments(TranslationCase):
             ("=A1 + 1", "A1+1"),
             ("=SUM( A1:A3 )", "SUM(A1___range___A3)"),
             ('=IF(A1 = 1, "a b", "c")', "IF(A1==1,'a b','c')"),
-            ("=- A1", "-A1"),
+            ("=- A1", "(-A1)"),
             ("=A1\n+1", "A1+1"),
         ])
 
@@ -642,17 +659,17 @@ class TestPropagation(unittest.TestCase):
             load({"A-B": {"A1": 1}, "A B": {"A1": 2}})
 
 
-class TestKnownLimitations(unittest.TestCase):
-    """Excel's precedence/associativity differs from Python's here. Documented in the README;
-    these start passing (and must be un-marked) if it ever gets fixed."""
+class TestPowerPrecedence(unittest.TestCase):
+    """Excel binds unary minus tighter than ^, and ^ is left-associative."""
 
-    @unittest.expectedFailure
-    def test_unary_minus_binds_tighter_than_power(self):
-        self.assertEqual(value(load({"S": {"A1": "=-2^2"}}), "S", "A1"), 4)
-
-    @unittest.expectedFailure
-    def test_power_is_left_associative(self):
-        self.assertEqual(value(load({"S": {"A1": "=2^3^2"}}), "S", "A1"), 64)
+    def test_values(self):
+        cases = [("=-2^2", 4), ("=2^3^2", 64), ("=-2^3", -8), ("=2^-1", 0.5), ("=0-2^2", -4),
+                 ("=1+2^3^2", 65), ("=2^3^2^0.5", 8.0), ("=2^(3^2)", 512), ("=-(2^2)", -4)]
+        cells = {f"A{row}": formula for row, (formula, _) in enumerate(cases, start=1)}
+        manager = load({"S": cells})
+        for row, (formula, expected) in enumerate(cases, start=1):
+            with self.subTest(formula=formula):
+                self.assertEqual(value(manager, "S", f"A{row}"), expected)
 
 
 if __name__ == "__main__":

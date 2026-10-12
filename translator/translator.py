@@ -27,6 +27,10 @@ def formula_to_python(formula):
     open_starts = []  # index in out where each open paren / function call started
     last_operand_start = 0  # index in out where the last complete operand started
     previous = None  # last non-whitespace token
+    # Excel binds unary minus tighter than '^' and '^' is left-associative; Python does the
+    # opposite, so both get explicit parentheses: -2^2 -> (-2)**2, 2^3^2 -> (2**3)**2
+    prefix_starts = []  # (depth, index in out) of each '(-' waiting for its operand
+    power_chain_start = {}  # depth -> index in out where the running '^' chain started
     items = Tokenizer(formula).items
 
     for index, token in enumerate(items):
@@ -52,22 +56,44 @@ def formula_to_python(formula):
         ):
             out.append("None")
 
+        depth = len(open_starts)
         if kind == Token.OPERAND:
             last_operand_start = len(out)
             out.append(translate_operand(subtype, value))
         elif subtype == Token.OPEN:  # FUNC or PAREN
             open_starts.append(len(out))
+            power_chain_start[depth + 1] = None
             out.append(value[:-1].upper() + "(" if kind == Token.FUNC else value)
         elif subtype == Token.CLOSE:
             last_operand_start = open_starts.pop()
             out.append(value)
+        elif kind == Token.OP_PRE:
+            prefix_starts.append((depth, len(out)))
+            out.append("(" + value)
         elif kind == Token.OP_IN:
+            if value == "^":
+                chain_start = power_chain_start.get(depth)
+                if chain_start is None:
+                    power_chain_start[depth] = last_operand_start
+                else:  # a^b^c: close (a**b) before adding **c
+                    out.insert(chain_start, "(")
+                    out.append(")")
+                    last_operand_start = chain_start
+            else:
+                power_chain_start[depth] = None
             out.append(infix_operator_map.get(value, value))
         elif kind == Token.OP_POST:  # '%' binds to the operand right before it: 1/50% -> 1/(50/100)
             out.insert(last_operand_start, "(")
             out.append("/100)")
-        else:  # OP_PRE (unary +/-) and SEP (',')
+        else:  # SEP (',')
+            power_chain_start[depth] = None
             out.append(value)
+
+        # an operand just completed: close the '(-' prefixes waiting for it
+        if kind == Token.OPERAND or subtype == Token.CLOSE:
+            while prefix_starts and prefix_starts[-1][0] == len(open_starts):
+                last_operand_start = prefix_starts.pop()[1]
+                out.append(")")
         previous = token
 
     return "".join(out)
