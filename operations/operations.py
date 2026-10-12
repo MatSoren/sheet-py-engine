@@ -102,6 +102,39 @@ class Today(Operation):
         return datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def excel_comparable(left, right):
+    """Two values -> two keys Python compares the way Excel does.
+
+    numbers < text < TRUE/FALSE, text is case-insensitive, dates are serial numbers, and a
+    blank cell counts as 0, "" or FALSE depending on the other side.
+    """
+    if left is None:
+        left = _blank_like(right)
+    if right is None:
+        right = _blank_like(left)
+    return _comparison_key(left), _comparison_key(right)
+
+
+def _blank_like(other):
+    if isinstance(other, bool):
+        return False
+    if isinstance(other, str):
+        return ""
+    return 0
+
+
+def _comparison_key(value):
+    if isinstance(value, bool):
+        return (2, value)
+    if isinstance(value, str):
+        return (1, value.lower())
+    if isinstance(value, datetime):
+        return (0, (value - datetime(1899, 12, 30)).total_seconds() / 86400)
+    if isinstance(value, date):
+        return (0, (value - date(1899, 12, 30)).days)
+    return (0, value)
+
+
 class EqualCondition(Operation):
     def __str__(self):
         return "EqualCondition"
@@ -111,36 +144,8 @@ class EqualCondition(Operation):
         self.operand_2 = operand_2
 
     def operate(self):
-        op_1 = self.operand_1.operate()
-        op_2 = self.operand_2.operate()
-        if op_1 is None or op_2 is None:
-            return None
-        
-        if not (isinstance(op_1, str) and isinstance(op_2, str)):
-            if isinstance(op_1, str):
-                try:
-                    op_1 = float(op_1)
-                except:
-                    op_1 = 0
-
-            if isinstance(op_2, str):
-                try:
-                    op_2 = float(op_1)
-                except:
-                    op_2 = 0
-
-            if isinstance(op_1, (date, datetime)):
-                base_date = datetime(1899, 12, 31)
-                op_1 = (op_1 - base_date).days
-
-            if isinstance(op_2, (date, datetime)):
-                base_date = datetime(1899, 12, 31)
-
-                op_2 = (op_2 - base_date).days
-        else:
-            op_1 = op_1.lower()
-            op_2 = op_2.lower()
-        return op_1 == op_2
+        left, right = excel_comparable(self.operand_1.operate(), self.operand_2.operate())
+        return left == right
 
 
 class DiferentCondition(Operation):
@@ -152,33 +157,8 @@ class DiferentCondition(Operation):
         self.operand_2 = operand_2
 
     def operate(self):
-        op_1 = self.operand_1.operate()
-        op_2 = self.operand_2.operate()
-        if op_1 is None or op_2 is None:
-            return None
-
-        if isinstance(op_1, str):
-            try:
-                op_1 = float(op_1)
-            except:
-                op_1 = 0
-
-        if isinstance(op_2, str):
-            try:
-                op_2 = float(op_1)
-            except:
-                op_2 = 0
-
-        if isinstance(op_1, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-            op_1 = (op_1 - base_date).days
-
-        if isinstance(op_2, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-
-            op_2 = (op_2 - base_date).days
-
-        return op_1 != op_2
+        left, right = excel_comparable(self.operand_1.operate(), self.operand_2.operate())
+        return left != right
 
 
 class GratherCondition(Operation):
@@ -190,33 +170,8 @@ class GratherCondition(Operation):
         self.operand_2 = operand_2
 
     def operate(self):
-        op_1 = self.operand_1.operate()
-        op_2 = self.operand_2.operate()
-        if op_1 is None or op_2 is None:
-            return None
-
-        if isinstance(op_1, str):
-            try:
-                op_1 = float(op_1)
-            except:
-                op_1 = 0
-
-        if isinstance(op_2, str):
-            try:
-                op_2 = float(op_1)
-            except:
-                op_2 = 0
-
-        if isinstance(op_1, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-            op_1 = (op_1 - base_date).days
-
-        if isinstance(op_2, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-
-            op_2 = (op_2 - base_date).days
-
-        return op_1 > op_2
+        left, right = excel_comparable(self.operand_1.operate(), self.operand_2.operate())
+        return left > right
 
 
 class GratherOrEqualCondition(Operation):
@@ -228,33 +183,8 @@ class GratherOrEqualCondition(Operation):
         self.operand_2 = operand_2
 
     def operate(self):
-        op_1 = self.operand_1.operate()
-        op_2 = self.operand_2.operate()
-        if op_1 is None or op_2 is None:
-            return None
-
-        if isinstance(op_1, str):
-            try:
-                op_1 = float(op_1)
-            except:
-                op_1 = 0
-
-        if isinstance(op_2, str):
-            try:
-                op_2 = float(op_1)
-            except:
-                op_2 = 0
-
-        if isinstance(op_1, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-            op_1 = (op_1 - base_date).days
-
-        if isinstance(op_2, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-
-            op_2 = (op_2 - base_date).days
-
-        return op_1 >= op_2
+        left, right = excel_comparable(self.operand_1.operate(), self.operand_2.operate())
+        return left >= right
 
 
 class LessCondition(Operation):
@@ -266,33 +196,8 @@ class LessCondition(Operation):
         self.operand_2 = operand_2
 
     def operate(self):
-        op_1 = self.operand_1.operate()
-        op_2 = self.operand_2.operate()
-        if op_1 is None or op_2 is None:
-            return None
-
-        if isinstance(op_1, str):
-            try:
-                op_1 = float(op_1)
-            except:
-                op_1 = 0
-
-        if isinstance(op_2, str):
-            try:
-                op_2 = float(op_1)
-            except:
-                op_2 = 0
-
-        if isinstance(op_1, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-            op_1 = (op_1 - base_date).days
-
-        if isinstance(op_2, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-
-            op_2 = (op_2 - base_date).days
-
-        return op_1 < op_2
+        left, right = excel_comparable(self.operand_1.operate(), self.operand_2.operate())
+        return left < right
 
 
 class LessOrEqualCondition(Operation):
@@ -304,33 +209,8 @@ class LessOrEqualCondition(Operation):
         self.operand_2 = operand_2
 
     def operate(self):
-        op_1 = self.operand_1.operate()
-        op_2 = self.operand_2.operate()
-        if op_1 is None or op_2 is None:
-            return None
-
-        if isinstance(op_1, str):
-            try:
-                op_1 = float(op_1)
-            except:
-                op_1 = 0
-
-        if isinstance(op_2, str):
-            try:
-                op_2 = float(op_1)
-            except:
-                op_2 = 0
-
-        if isinstance(op_1, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-            op_1 = (op_1 - base_date).days
-
-        if isinstance(op_2, (date, datetime)):
-            base_date = datetime(1899, 12, 31)
-
-            op_2 = (op_2 - base_date).days
-
-        return op_1 <= op_2
+        left, right = excel_comparable(self.operand_1.operate(), self.operand_2.operate())
+        return left <= right
 
 
 class BlankCondition(Operation):

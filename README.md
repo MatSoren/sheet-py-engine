@@ -154,8 +154,6 @@ python -m unittest test.test_translator -v
 - **Intersection operator, array constants and 3D references** (`=A1:A3 B1:B3`,
   `={1,2,3}`, `=SUM(Sheet1:Sheet3!A1)`) are not
   supported; they raise a `ValueError` naming the formula.
-- **`<>` between two strings is wrong**: `DiferentCondition` coerces both to numbers.
-  `<>` with numbers works.
 - **Error literals are plain strings**: `#N/A` evaluates to `"#N/A"`, and `IFERROR` only
   catches Python exceptions, not those values.
 - **No cycle detection.** Circular references recurse until Python's recursion limit.
