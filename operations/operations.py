@@ -370,6 +370,14 @@ class MRound(Operation):
         return math.copysign(math.floor(abs(quotient) + 0.5), quotient) * mutiple
 
 
+def round_magnitude(number, num_digits, rounding):
+    """ROUNDUP/ROUNDDOWN: apply floor/ceil to the absolute value, so the sign doesn't flip
+    the direction. 12 decimals absorb float noise first (1.1*3 = 3.3000000000000003)."""
+    factor = 10**num_digits
+    result = math.copysign(rounding(round(abs(number) * factor, 12)) / factor, number)
+    return result or 0.0  # no -0.0
+
+
 class RoundDown(Operation):
     def __str__(self):
         return "RoundDown"
@@ -382,8 +390,7 @@ class RoundDown(Operation):
         number = self.number.operate()
         if self.num_digits.operate() is None or number is None:
             return None
-        factor = 10 ** self.num_digits.operate()
-        return math.floor(number * factor) / factor
+        return round_magnitude(number, self.num_digits.operate(), math.floor)  # toward zero
 
 
 class RoundUp(Operation):
@@ -398,8 +405,7 @@ class RoundUp(Operation):
         number = self.number.operate()
         if self.num_digits.operate() is None or number is None:
             return None
-        factor = 10 ** self.num_digits.operate()
-        return math.ceil(number * factor) / factor
+        return round_magnitude(number, self.num_digits.operate(), math.ceil)  # away from zero
 
 
 class BinaryOperation(Operation, ABC):
