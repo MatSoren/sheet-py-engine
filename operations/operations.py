@@ -9,6 +9,8 @@ import re
 
 import math
 
+from decimal import Decimal, ROUND_HALF_UP
+
 from collections.abc import Iterable
 
 """
@@ -564,17 +566,21 @@ class Text(Operation):
         return "Text"
 
     def __init__(self, element, _format):
-        self.element = element.operate()
-        # print(self.element)
-        self.format = _format.operate()
+        self.element = element
+        self.format = _format
 
     def operate(self):
-        if isinstance(self.element, (int, float)):
-            return format(self.element, self.format)
+        # evaluated here, not in __init__, so TEXT follows changes to its source cell
+        element = self.element.operate()
+        _format = self.format.operate()
+        if isinstance(element, (int, float)) and not isinstance(element, bool):
+            if not re.search(r"[YMDHS]", _format, re.IGNORECASE):
+                return self._number_text(element, _format)
+            element = datetime(1899, 12, 30) + timedelta(days=element)  # a date is a serial number
 
-        elif isinstance(self.element, (date, datetime)):
+        if isinstance(element, (date, datetime)):
             formated_date = (
-                self.format.replace("YYYY", "%Y")
+                _format.replace("YYYY", "%Y")
                 .replace("YY", "%y")
                 .replace("MM", "%m")
                 .replace("DDDD", "%A")
@@ -584,8 +590,18 @@ class Text(Operation):
                 .replace("mm", "%M")
                 .replace("ss", "%S")
             )
-            return self.element.strftime(formated_date)
-        return self.element
+            return element.strftime(formated_date)
+        return element
+
+    @staticmethod
+    def _number_text(value, _format):
+        # ponytail: 0 / 0.00 / #,##0.00 / 0% style formats only; no sections, no literals
+        percent = "%" in _format
+        if percent:
+            value *= 100
+        decimals = len(_format.split(".")[1].rstrip("%")) if "." in _format else 0
+        rounded = Decimal(repr(value)).quantize(Decimal(1).scaleb(-decimals), ROUND_HALF_UP)
+        return f"{rounded:{',' if ',' in _format else ''}f}" + ("%" if percent else "")
 
 
 class IfError(Operation):

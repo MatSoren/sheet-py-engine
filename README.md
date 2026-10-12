@@ -142,6 +142,8 @@ python -m unittest test.test_translator -v
 
 ## Known limitations
 
+- **`TEXT` knows a subset of format codes**: dates (`DD/MM/YYYY`, `DDD`, `hh:mm`, …) and
+  simple number formats (`0`, `0.00`, `#,##0.00`, `0%`); no sections (`0;-0`) or literals.
 - **`COUNTIF` has no wildcards** (`*`, `?`, `~`), and numbers stored as text don't match a
   numeric criterion.
 - **One workbook per process.** `SheetsManager._sheet_dict` is class-level state and

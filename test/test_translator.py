@@ -11,6 +11,7 @@ Two layers:
 
 import ast
 import unittest
+from datetime import datetime
 
 from openpyxl import Workbook
 
@@ -476,6 +477,17 @@ EVALUATION_CASES = [
     ("=HLOOKUP(A1/5,$I$10:$K$12,3)", 200),
     ("=HLOOKUP(2,I10:K12,1)", 2),
     ("=HLOOKUP(2,I10:K12,4)", None),
+    # TEXT
+    ('=TEXT(1234.5,"0")', "1235"),
+    ('=TEXT(2.5,"0")', "3"),
+    ('=TEXT(D1,"0.00")', "2.50"),
+    ('=TEXT(1234.567,"#,##0.00")', "1,234.57"),
+    ('=TEXT(0.125,"0%")', "13%"),
+    ('=TEXT(0.125,"0.0%")', "12.5%"),
+    ('=TEXT(-1.005,"0.00")', "-1.01"),
+    ('=TEXT(45292,"DD/MM/YYYY")', "01/01/2024"),
+    ('=TEXT(45292,"DDDD")', "Monday"),
+    ('=TEXT(C1,"0")', "abc"),
     # MROUND rounds halves away from zero, like Excel (Python's round() would give 10 / 300)
     ("=MROUND(12.5,5)", 15),
     ("=MROUND(325,50)", 350),
@@ -570,6 +582,20 @@ class TestPropagation(unittest.TestCase):
         # the criterion is re-read on every update, not frozen at load time
         manager.get_sheet("Later").get_cell("B1").set_operation(Value(">=1"))
         self.assertEqual(value(manager, "Main", "A3"), 2)
+
+    def test_text_follows_its_source(self):
+        manager = load({
+            "Main": {
+                "A1": "=TEXT(Later!A1,\"DDD\")",
+                "A2": "=TEXT(Later!A1+1,\"DD/MM/YYYY\")",
+            },
+            "Later": {"A1": datetime(2024, 1, 1)},  # a Monday, loaded after Main
+        })
+        self.assertEqual(value(manager, "Main", "A1"), "Mon")
+        self.assertEqual(value(manager, "Main", "A2"), "02/01/2024")
+        manager.get_sheet("Later").get_cell("A1").set_operation(Value(datetime(2024, 1, 3)))
+        self.assertEqual(value(manager, "Main", "A1"), "Wed")
+        self.assertEqual(value(manager, "Main", "A2"), "04/01/2024")
 
     def test_colliding_sheet_names_fail(self):
         with self.assertRaisesRegex(ValueError, "collide"):
