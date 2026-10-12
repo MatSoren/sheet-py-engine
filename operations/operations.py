@@ -471,7 +471,12 @@ class MRound(Operation):
         mutiple = self.multiple.operate()
         if mutiple is None or number is None:
             return None
-        return round(number / mutiple) * mutiple
+        if mutiple == 0:
+            return 0
+        # Excel rounds halves away from zero; Python's round() goes to the even neighbour.
+        # ponytail: 12 decimals absorb float noise (0.15/0.1 = 1.4999999999999998)
+        quotient = round(number / mutiple, 12)
+        return math.copysign(math.floor(abs(quotient) + 0.5), quotient) * mutiple
 
 
 class RoundDown(Operation):

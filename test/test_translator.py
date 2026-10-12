@@ -412,6 +412,14 @@ EVALUATION_CASES = [
     ("=IF(B2,,2)", 2),
     ("=IF(B1,,2)", None),
     ("=ROUNDUP(SUM(A1:A3)*0.21,1)", 12.6),
+    # MROUND rounds halves away from zero, like Excel (Python's round() would give 10 / 300)
+    ("=MROUND(12.5,5)", 15),
+    ("=MROUND(325,50)", 350),
+    ("=MROUND(12.4,5)", 10),
+    ("=MROUND(7.5,5)", 10),
+    ("=MROUND(-12.5,-5)", -15),
+    ("=MROUND(0.15,0.1)", 0.2),
+    ("=MROUND(A1,0)", 0),
     # other sheets
     ("='2024 Ventas'!A1", 100),
     ("='2024 Ventas'!$A$2", 200),
