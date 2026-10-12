@@ -333,7 +333,7 @@ def value(manager, sheet, coordinate):
 DATA = {
     "A1": 10, "A2": 20, "A3": 30,
     "B1": True, "B2": False,
-    "C1": "abc", "C2": "5",
+    "C1": "abc", "C2": "5", "C3": "a*c",
     "D1": 2.5, "D2": 0, "D3": 2.0,
     "E1": "#N/A",  # openpyxl stores error codes as error cells
     # horizontal lookup table, H10:K12
@@ -507,7 +507,29 @@ EVALUATION_CASES = [
     ("=COUNTIF(A1:C1,TRUE)", 1),
     ("=COUNTIF(A1:A3,Z99)", 0),
     ("=COUNTIF(Z1:Z3,\"\")", 3),
+    ("=COUNTIF(Z1:Z3,\"*\")", 0),
+    ("=COUNTIF(Z1:Z3,\"<>\")", 0),
+    ("=COUNTIF(A1:A3,\"<>\")", 3),
     ("=COUNTIF('Costos-Fijos'!A1:A3,\">1\")", 2),
+    ("=COUNTIF(E1,1)", 0),
+    ("=COUNTIF(E1:E2,\"#N/A\")", 1),
+    ("=COUNTIF(E1:E2,\"*\")", 0),
+    ("=COUNTIF(E1:E2,\"<>x\")", 2),
+    # numbers stored as text equal a numeric criterion
+    ("=COUNTIF(C1:C2,5)", 1),
+    ("=COUNTIF(C1:C2,\"5\")", 1),
+    ("=COUNTIF(C1:C2,\"<>5\")", 1),
+    ("=COUNTIF(C1:C2,\">4\")", 0),
+    # wildcards
+    ("=COUNTIF(C1:C3,\"a*\")", 2),
+    ("=COUNTIF(C1:C3,\"*B*\")", 1),
+    ("=COUNTIF(C1:C3,\"a?c\")", 2),
+    ("=COUNTIF(C1:C3,\"a?\")", 0),
+    ("=COUNTIF(C1:C3,\"*\")", 3),
+    ("=COUNTIF(C1:C3,\"a~*c\")", 1),
+    ("=COUNTIF(C1:C3,\"<>a*\")", 1),
+    ("=COUNTIF(C1:C3,\"=a.c\")", 0),
+    ("=COUNTIF(C1:C3,\">b\")", 0),
     # HLOOKUP
     ("=HLOOKUP(2,I10:K12,2)", "dos"),
     ("=HLOOKUP(2,I10:K12,3,FALSE)", 200),

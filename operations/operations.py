@@ -352,14 +352,10 @@ class CountIf(Operation):
 
     def operate(self):
         # evaluated here, not in __init__: the criterion may live in a cell loaded later
-        operator, target = self._split_condition(self.condition.operate())
-        operation = self._condition_operation[operator]
-        values = self.range.operate()
-        if not isinstance(values, list):  # COUNTIF(A1, ...) gets a Reference, not a Range
-            values = [values]
-        else:
-            values = [cell.calculated_value for cell in values]
-        return sum(1 for value in values if self._matches(value, operator, operation, target))
+        matches = self._matcher(*self._split_condition(self.condition.operate()))
+        # COUNTIF(A1, ...) gets a Reference; read the cell, an error in it just doesn't match
+        cells = self.range.operate() if isinstance(self.range, Range) else [self.range.cell]
+        return sum(1 for cell in cells if matches(cell.calculated_value))
 
     def _split_condition(self, criteria):
         """'>=10' -> ('>=', 10.0), 'abc' -> ('=', 'abc'), 5 -> ('=', 5); empty counts as 0."""
@@ -374,21 +370,49 @@ class CountIf(Operation):
             pass
         return operator or "=", target
 
-    @staticmethod
-    def _matches(value, operator, operation, target):
-        # ponytail: no wildcards (* ? ~) and numbers stored as text don't match numeric criteria
+    def _matcher(self, operator, target):
+        operation = self._condition_operation[operator]
+        equality = operator in ("=", "<>")
         if isinstance(target, str):
-            value = "" if value is None else value
-            if not isinstance(value, str):
+            pattern = wildcard_pattern(target)
+
+            def matches(value):
+                if value is None or isinstance(value, ExcelError):
+                    # a blank only equals "" and an error only its code: "*" counts neither
+                    code = "" if value is None else str(value)
+                    return equality and (code.lower() == target.lower()) == (operator == "=")
+                if not isinstance(value, str):
+                    return operator == "<>"
+                if equality:
+                    return bool(pattern.fullmatch(value)) == (operator == "=")
+                return operation(value.lower(), target.lower())
+
+            return matches
+
+        def matches(value):
+            if isinstance(value, str) and equality:
+                try:  # a number stored as text equals a numeric criterion, like in Excel
+                    value = float(value)
+                except ValueError:
+                    pass
+            if (
+                value is None
+                or isinstance(value, (str, ExcelError))
+                or isinstance(value, bool) != isinstance(target, bool)
+            ):
                 return operator == "<>"
-            return operation(value.lower(), target.lower())
-        if (
-            value is None
-            or isinstance(value, (str, ExcelError))
-            or isinstance(value, bool) != isinstance(target, bool)
-        ):
-            return operator == "<>"
-        return operation(value, target)
+            return operation(value, target)
+
+        return matches
+
+
+def wildcard_pattern(text):
+    """COUNTIF text criteria: * any run, ? one character, ~ escapes the next; any case."""
+    pattern = "".join(
+        ".*" if part == "*" else "." if part == "?" else re.escape(part[-1])
+        for part in re.findall(r"~.|.", text, re.DOTALL)
+    )
+    return re.compile(pattern, re.IGNORECASE | re.DOTALL)
 
 
 class MRound(Operation):
