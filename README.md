@@ -51,10 +51,10 @@ another sheet.
    operands, recursively.
 5. **`SheetCell`** is simultaneously an `Operation`, an `Observer` and a `Subject`. When a
    cell is built from a formula it attaches itself to every cell it references. Writing to
-   a cell calls `update()`, which recomputes and then `notify()`s its observers — the
-   change propagates outward through the graph, touching only what actually depends on it.
-   Loading is the exception: cells only get their operations while the file is read, then
-   `graphlib` orders them by dependency and each one is computed exactly once.
+   a cell calls `update()`, which follows the observers outward to collect every cell that
+   depends on it, orders them with `graphlib` and recomputes each one exactly once —
+   touching only what actually depends on the change. Loading does the same over the whole
+   workbook once the file is read.
 
 Using `ast` for the parsing is the trick that keeps this small: operator precedence,
 parentheses, nesting and function calls come free from CPython's own grammar.
@@ -79,7 +79,7 @@ python main.py FILE.xlsx [SHEET!CELL ...] [--set SHEET!CELL=VALUE] [-v]
 | `SHEET!CELL` | print the computed value of that cell |
 | `--set SHEET!CELL=VALUE` | overwrite a cell first; recalculation propagates. Repeatable. |
 | `-v` | log the propagation as it happens |
-| `--recursion-limit N` | deep formula chains recurse; raise it if you hit the limit |
+| `--recursion-limit N` | deeply nested formulas recurse; raise it if you hit the limit |
 
 Run with no cells to list the sheets.
 
@@ -159,7 +159,7 @@ python -m unittest test.test_translator -v
   `={1,2,3}`, `=SUM(Sheet1:Sheet3!A1)`) are not
   supported; they raise a `ValueError` naming the formula.
 - **Circular references** load with a warning naming the cycle, but their values are not
-  meaningful, and writing to a cell inside a cycle recurses until Python's recursion limit.
+  meaningful; writing to a cell inside a cycle logs the same warning.
 - **`detach()` is a no-op**, so observers are never removed.
 - Dates, formatting, charts, pivot tables and macros are out of scope. This computes
   values.

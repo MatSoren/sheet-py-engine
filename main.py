@@ -62,7 +62,7 @@ def main(argv=None):
     )
     parser.add_argument(
         "--recursion-limit", type=int, default=1000,
-        help="Python recursion limit; deep formula chains need a high value (default: 1000)",
+        help="Python recursion limit; deeply nested formulas need a high value (default: 1000)",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="log the propagation")
     args = parser.parse_args(argv)
@@ -82,7 +82,7 @@ def main(argv=None):
             sys.exit(f"expected SHEET!CELL=VALUE, got {assignment!r}")
         sheet_name, coordinate = parse_target(target)
         cell = resolve(manager, sheet_name, coordinate)
-        # set_operation triggers update() -> notify(), cascading to every dependent cell
+        # set_operation triggers update(): every dependent cell is recomputed once, in order
         cell.set_operation(Value(coerce(raw)))
         print(f"set {sheet_name}!{coordinate} = {cell.calculated_value}")
 

@@ -675,11 +675,39 @@ class TestPropagation(unittest.TestCase):
         manager.get_sheet("Chain").get_cell(f"A{size}").set_operation(Value(10))
         self.assertEqual(value(manager, "Chain", "A1"), size + 9)
 
+    def test_update_recomputes_each_dependent_once(self):
+        # chained diamonds: A(n+1) = B(n) + C(n), both from A(n). Notifying recursively
+        # would recompute A(n) 2^n times
+        depth = 25
+        cells = {"A1": 1}
+        for row in range(1, depth + 1):
+            cells[f"B{row}"] = f"=A{row}+1"
+            cells[f"C{row}"] = f"=A{row}*2"
+            cells[f"A{row + 1}"] = f"=B{row}+C{row}"
+        manager = load({"Diamonds": cells})
+        original_recalculate = SheetCell.recalculate
+        recalculations = collections.Counter()
+        SheetCell.recalculate = lambda cell: recalculations.update([id(cell)]) or original_recalculate(cell)
+        try:
+            manager.get_sheet("Diamonds").get_cell("A1").set_operation(Value(2))
+        finally:
+            SheetCell.recalculate = original_recalculate
+        self.assertEqual(len(recalculations), 3 * depth + 1)
+        self.assertEqual(max(recalculations.values()), 1)
+        expected = 2
+        for _ in range(depth):
+            expected = (expected + 1) + expected * 2
+        self.assertEqual(value(manager, "Diamonds", f"A{depth + 1}"), expected)
+
     def test_circular_reference_loads_with_a_warning(self):
         with self.assertLogs(level="WARNING") as logs:
             manager = load({"Loop": {"A1": "=B1+1", "B1": "=A1+1", "C1": 5, "D1": "=C1*2"}})
         self.assertIn("circular reference", logs.output[0])
         self.assertEqual(value(manager, "Loop", "D1"), 10)
+        with self.assertLogs(level="WARNING"):
+            manager.get_sheet("Loop").get_cell("A1").set_operation(Value(1))
+        manager.get_sheet("Loop").get_cell("C1").set_operation(Value(7))
+        self.assertEqual(value(manager, "Loop", "D1"), 14)
 
     def test_error_clears_when_the_cause_is_fixed(self):
         manager = load({"Main": {"A1": "=1/B1", "A2": "=A1*2", "A3": "=IFERROR(A2,-1)", "B1": 0}})

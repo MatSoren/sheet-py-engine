@@ -1,3 +1,4 @@
+import graphlib
 import logging
 from abc import ABC, abstractmethod
 from operations.operation_factory import OperationFactory, OperationTypes
@@ -5,6 +6,28 @@ from operations.operations import FORMULA_FAILURES, ExcelError, Operation
 
 # Todo Operaciones recursivas
 # Todo Attach de todas las celdas en la traduccion
+
+
+def evaluate_in_dependency_order(cells):
+    """Recomputes every cell once, after the cells it depends on.
+
+    Used when loading (translate() only assigns operations) and on every update(): letting
+    each cell notify its observers recursively would recompute a cell once per path that
+    reaches it, which grows exponentially with chained diamonds.
+    """
+    sorter = graphlib.TopologicalSorter()
+    for cell in cells:
+        sorter.add(cell)
+        for observer in cell.observers:
+            sorter.add(observer, cell)
+    try:
+        order = list(sorter.static_order())
+    except graphlib.CycleError as error:
+        cycle = " -> ".join(f"{cell.sheet}!{cell.coordinate}" for cell in error.args[1])
+        logging.warning("circular reference, values may be wrong: %s", cycle)
+        order = cells  # ponytail: one pass in load order; Excel would iterate or show 0
+    for cell in order:
+        cell.recalculate()
 
 
 class Observer(ABC):
@@ -64,8 +87,15 @@ class SheetCell(Observer, Subject, Operation):
         pass
 
     def update(self):
-        self.recalculate()
-        self.notify()
+        """Recomputes this cell and everything that depends on it, each one once, in order."""
+        affected, pending = {self: None}, [self]  # dict as an ordered set
+        while pending:
+            for observer in pending.pop().observers:
+                if observer not in affected:
+                    affected[observer] = None
+                    pending.append(observer)
+        logging.debug("%s!%s changed, recomputing %d dependent cells", self.sheet, self.coordinate, len(affected) - 1)
+        evaluate_in_dependency_order(list(affected))
 
     def recalculate(self):
         """Recomputes this cell's value without notifying its observers."""

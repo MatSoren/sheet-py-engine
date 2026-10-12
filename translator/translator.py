@@ -1,12 +1,10 @@
 from Sheet import SheetsManager, Sheet
-from SheetCell import SheetCell
+from SheetCell import SheetCell, evaluate_in_dependency_order
 from operations.operation_factory import OperationFactory, OperationTypes
 from translator.AstProcessor import OperationProcessor, encode_error, encode_ref, normalize_sheet_name
 from operations.operations import ExcelError
 from openpyxl.formula.tokenizer import Tokenizer, Token
 import ast
-import graphlib
-import logging
 import re
 import sys
 
@@ -150,28 +148,6 @@ def translate(workbook):
         [cell for name in normalized_names for cell in sheet_manager.get_sheet(name).elements.values()]
     )
     return sheet_manager
-
-
-def evaluate_in_dependency_order(cells):
-    """Computes every cell once, after the cells it depends on.
-
-    Loading only assigns operations: letting each loaded cell notify its observers would
-    recompute the dependents of every cell again and again (~130 times per cell on a large
-    workbook). set_operation() after loading still propagates as usual.
-    """
-    sorter = graphlib.TopologicalSorter()
-    for cell in cells:
-        sorter.add(cell)
-        for observer in cell.observers:
-            sorter.add(observer, cell)
-    try:
-        order = list(sorter.static_order())
-    except graphlib.CycleError as error:
-        cycle = " -> ".join(f"{cell.sheet}!{cell.coordinate}" for cell in error.args[1])
-        logging.warning("circular reference, values may be wrong: %s", cycle)
-        order = cells  # ponytail: one pass in load order; Excel would iterate or show 0
-    for cell in order:
-        cell.recalculate()
 
 
 def generate_value_cell(cell, sheet_name):
