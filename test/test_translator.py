@@ -16,6 +16,7 @@ from datetime import datetime
 from openpyxl import Workbook
 
 from Sheet import SheetsManager
+from SheetCell import SheetCell
 from operations.operations import Value
 from translator import translator
 from translator.AstProcessor import decode_ref, encode_ref, normalize_sheet_name
@@ -609,6 +610,32 @@ class TestPropagation(unittest.TestCase):
         manager.get_sheet("Later").get_cell("A1").set_operation(Value(datetime(2024, 1, 3)))
         self.assertEqual(value(manager, "Main", "A1"), "Wed")
         self.assertEqual(value(manager, "Main", "A2"), "04/01/2024")
+
+    def test_load_evaluates_each_cell_once(self):
+        # a chain written bottom-up: every loaded cell would re-propagate the whole chain
+        size = 200
+        cells = {f"A{row}": f"=A{row + 1}+1" for row in range(1, size)}
+        cells[f"A{size}"] = 1
+        original_update, original_recalculate = SheetCell.update, SheetCell.recalculate
+        calls = []
+        SheetCell.update = lambda cell: calls.append("update") or original_update(cell)
+        SheetCell.recalculate = lambda cell: calls.append("recalculate") or original_recalculate(cell)
+        try:
+            manager = load({"Chain": cells})
+        finally:
+            SheetCell.update, SheetCell.recalculate = original_update, original_recalculate
+        self.assertEqual(value(manager, "Chain", "A1"), size)
+        self.assertEqual(calls.count("update"), 0)
+        self.assertEqual(calls.count("recalculate"), size)
+        # after loading, changes still propagate
+        manager.get_sheet("Chain").get_cell(f"A{size}").set_operation(Value(10))
+        self.assertEqual(value(manager, "Chain", "A1"), size + 9)
+
+    def test_circular_reference_loads_with_a_warning(self):
+        with self.assertLogs(level="WARNING") as logs:
+            manager = load({"Loop": {"A1": "=B1+1", "B1": "=A1+1", "C1": 5, "D1": "=C1*2"}})
+        self.assertIn("circular reference", logs.output[0])
+        self.assertEqual(value(manager, "Loop", "D1"), 10)
 
     def test_colliding_sheet_names_fail(self):
         with self.assertRaisesRegex(ValueError, "collide"):

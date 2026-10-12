@@ -37,10 +37,6 @@ class SheetCell(Observer, Subject, Operation):
         self.coordinate = ""
         self.sheet = ""
 
-    def init_operation(self, operation_type, *args, **kwargs):
-        self.operation = OperationFactory.get_instance(operation_type, *args)
-        self.update()
-
     def set_operation(self, operation):
         self.operation = operation
         self.update()
@@ -68,11 +64,15 @@ class SheetCell(Observer, Subject, Operation):
         pass
 
     def update(self):
+        self.recalculate()
+        self.notify()
+
+    def recalculate(self):
+        """Recomputes this cell's value without notifying its observers."""
         operation_result = self.operation.operate()
         if isinstance(operation_result,float):
             operation_result = round(operation_result,10)
         self.calculated_value = operation_result 
-        self.notify()
 
     def operate(self):
         return self.calculated_value

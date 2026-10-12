@@ -1,9 +1,11 @@
 from Sheet import SheetsManager, Sheet
 from SheetCell import SheetCell
-from operations.operation_factory import OperationTypes
+from operations.operation_factory import OperationFactory, OperationTypes
 from translator.AstProcessor import OperationProcessor, encode_ref, normalize_sheet_name
 from openpyxl.formula.tokenizer import Tokenizer, Token
 import ast
+import graphlib
+import logging
 import re
 import sys
 
@@ -117,7 +119,32 @@ def translate(workbook):
                 if cell.value is None:
                     continue
                 creation_switch.get(cell.data_type, None)(cell, sheet_name)
+    evaluate_in_dependency_order(
+        [cell for name in normalized_names for cell in sheet_manager.get_sheet(name).elements.values()]
+    )
     return sheet_manager
+
+
+def evaluate_in_dependency_order(cells):
+    """Computes every cell once, after the cells it depends on.
+
+    Loading only assigns operations: letting each loaded cell notify its observers would
+    recompute the dependents of every cell again and again (~130 times per cell on a large
+    workbook). set_operation() after loading still propagates as usual.
+    """
+    sorter = graphlib.TopologicalSorter()
+    for cell in cells:
+        sorter.add(cell)
+        for observer in cell.observers:
+            sorter.add(observer, cell)
+    try:
+        order = list(sorter.static_order())
+    except graphlib.CycleError as error:
+        cycle = " -> ".join(f"{cell.sheet}!{cell.coordinate}" for cell in error.args[1])
+        logging.warning("circular reference, values may be wrong: %s", cycle)
+        order = cells  # ponytail: one pass in load order; Excel would iterate or show 0
+    for cell in order:
+        cell.recalculate()
 
 
 def generate_value_cell(cell, sheet_name):
@@ -129,7 +156,7 @@ def generate_value_cell(cell, sheet_name):
         sheet_cell.set_sheet(sheet_name)
 
     else:
-        sheet_cell.init_operation(OperationTypes.Value, cell.value)
+        sheet_cell.operation = OperationFactory.get_instance(OperationTypes.Value, cell.value)
     sheet.set_cell(cell.coordinate, sheet_cell)
 
 
@@ -201,7 +228,7 @@ def generate_formula_cell(cell, sheet_name):
 
     operation = astProcessor.visit(tree)
 
-    current_cell.set_operation(operation)
+    current_cell.operation = operation  # computed by evaluate_in_dependency_order()
 
 
 def have_operators(expression):

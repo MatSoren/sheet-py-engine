@@ -53,6 +53,8 @@ another sheet.
    cell is built from a formula it attaches itself to every cell it references. Writing to
    a cell calls `update()`, which recomputes and then `notify()`s its observers — the
    change propagates outward through the graph, touching only what actually depends on it.
+   Loading is the exception: cells only get their operations while the file is read, then
+   `graphlib` orders them by dependency and each one is computed exactly once.
 
 Using `ast` for the parsing is the trick that keeps this small: operator precedence,
 parentheses, nesting and function calls come free from CPython's own grammar.
@@ -159,7 +161,8 @@ python -m unittest test.test_translator -v
 - **Errors have no value of their own**: `#N/A` evaluates to the string `"#N/A"`, while
   computed errors (`/0`, a failed `HLOOKUP`) are `None`, the same as a blank cell, so an
   error feeding arithmetic reads as 0. `IFERROR` only catches Python exceptions.
-- **No cycle detection.** Circular references recurse until Python's recursion limit.
+- **Circular references** load with a warning naming the cycle, but their values are not
+  meaningful, and writing to a cell inside a cycle recurses until Python's recursion limit.
 - **`detach()` is a no-op**, so observers are never removed.
 - Dates, formatting, charts, pivot tables and macros are out of scope. This computes
   values.
