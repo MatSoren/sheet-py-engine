@@ -426,36 +426,44 @@ class CountIf(Operation):
     }
 
     def __init__(self, cell_range, condition):
-        self.condition, self.right_side = self._split_condition(condition)
         self.range = cell_range
+        self.condition = condition
 
     def operate(self):
-        operation = self._condition_operation.get(self.condition, None)
-        count = 0
-        if operation is None:
-            logging.warning("condition did not load correctly")
-            return count
-        if self.right_side is None:
-            return None
-        for cell in self.range.operate():
-            cell_value = cell.calculated_value
-            if operation(cell_value, self.right_side):
-                count += 1
-        return count
+        # evaluated here, not in __init__: the criterion may live in a cell loaded later
+        operator, target = self._split_condition(self.condition.operate())
+        operation = self._condition_operation[operator]
+        values = self.range.operate()
+        if not isinstance(values, list):  # COUNTIF(A1, ...) gets a Reference, not a Range
+            values = [values]
+        else:
+            values = [cell.calculated_value for cell in values]
+        return sum(1 for value in values if self._matches(value, operator, operation, target))
 
     def _split_condition(self, criteria):
-        criteria = criteria.operate()
-
+        """'>=10' -> ('>=', 10.0), 'abc' -> ('=', 'abc'), 5 -> ('=', 5); empty counts as 0."""
         if criteria is None:
-            return "=", None
+            return "=", 0
+        if not isinstance(criteria, str):
+            return "=", criteria
+        operator, target = re.match(r"(<=|>=|<>|=|<|>)?(.*)", criteria, re.DOTALL).groups()
+        try:
+            target = float(target)
+        except ValueError:
+            pass
+        return operator or "=", target
 
-        pattern = r"(<=|>=|<>|=|<|>)(.*)"
-        match = re.match(pattern, criteria)
-
-        if match:
-            return match.group(1), match.group(2).strip()
-        else:
-            return "=", criteria.strip()
+    @staticmethod
+    def _matches(value, operator, operation, target):
+        # ponytail: no wildcards (* ? ~) and numbers stored as text don't match numeric criteria
+        if isinstance(target, str):
+            value = "" if value is None else value
+            if not isinstance(value, str):
+                return operator == "<>"
+            return operation(value.lower(), target.lower())
+        if value is None or isinstance(value, str) or isinstance(value, bool) != isinstance(target, bool):
+            return operator == "<>"
+        return operation(value, target)
 
 
 class MRound(Operation):

@@ -142,9 +142,8 @@ python -m unittest test.test_translator -v
 
 ## Known limitations
 
-- **`COUNTIF` with a numeric criterion is broken.** `"=COUNTIF(A1:A9,75)"` raises a
-  `TypeError`, and `">75"` raises another one comparing `int` to `str`: the criterion is
-  never coerced to a number. Only string criteria work today.
+- **`COUNTIF` has no wildcards** (`*`, `?`, `~`), and numbers stored as text don't match a
+  numeric criterion.
 - **One workbook per process.** `SheetsManager._sheet_dict` is class-level state and
   `translator` holds a module-level manager, so loading a second workbook writes into the
   same registry as the first.

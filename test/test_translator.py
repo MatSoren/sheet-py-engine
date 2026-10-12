@@ -412,6 +412,21 @@ EVALUATION_CASES = [
     ("=IF(B2,,2)", 2),
     ("=IF(B1,,2)", None),
     ("=ROUNDUP(SUM(A1:A3)*0.21,1)", 12.6),
+    # COUNTIF
+    ("=COUNTIF(A1:A3,\">15\")", 2),
+    ("=COUNTIF(A1:A3,\"<=20\")", 2),
+    ("=COUNTIF(A1:A3,20)", 1),
+    ("=COUNTIF(A1:A3,\"20\")", 1),
+    ("=COUNTIF(A1:A3,\"=20\")", 1),
+    ("=COUNTIF(A1:A3,\"<>20\")", 2),
+    ("=COUNTIF(A1:A3,D3*10)", 1),
+    ("=COUNTIF(C1:C2,\"ABC\")", 1),
+    ("=COUNTIF(C1:C2,\"<>abc\")", 1),
+    ("=COUNTIF(C1,\"abc\")", 1),
+    ("=COUNTIF(A1:C1,TRUE)", 1),
+    ("=COUNTIF(A1:A3,Z99)", 0),
+    ("=COUNTIF(Z1:Z3,\"\")", 3),
+    ("=COUNTIF('Costos-Fijos'!A1:A3,\">1\")", 2),
     # MROUND rounds halves away from zero, like Excel (Python's round() would give 10 / 300)
     ("=MROUND(12.5,5)", 15),
     ("=MROUND(325,50)", 350),
@@ -489,13 +504,23 @@ class TestPropagation(unittest.TestCase):
     def test_range_over_cells_loaded_later(self):
         # the formula is translated before the cells it sums exist (later row / later sheet)
         manager = load({
-            "Main": {"A1": "=SUM(A5:A6)", "A2": "=SUM(Later!A1:A2)", "A5": 1, "A6": 2},
-            "Later": {"A1": 10, "A2": 20},
+            "Main": {
+                "A1": "=SUM(A5:A6)",
+                "A2": "=SUM(Later!A1:A2)",
+                "A3": "=COUNTIF(A5:A6,Later!B1)",
+                "A5": 1,
+                "A6": 2,
+            },
+            "Later": {"A1": 10, "A2": 20, "B1": 2},
         })
         self.assertEqual(value(manager, "Main", "A1"), 3)
         self.assertEqual(value(manager, "Main", "A2"), 30)
+        self.assertEqual(value(manager, "Main", "A3"), 1)
         manager.get_sheet("Later").get_cell("A2").set_operation(Value(5))
         self.assertEqual(value(manager, "Main", "A2"), 15)
+        # the criterion is re-read on every update, not frozen at load time
+        manager.get_sheet("Later").get_cell("B1").set_operation(Value(">=1"))
+        self.assertEqual(value(manager, "Main", "A3"), 2)
 
     def test_colliding_sheet_names_fail(self):
         with self.assertRaisesRegex(ValueError, "collide"):
