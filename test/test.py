@@ -27,7 +27,7 @@ def check_workbook(path, rel_tol=1e-9):
             continue
         for row in expected_wb[sheet_name].iter_rows():
             for cell in row:
-                if cell.value is None or cell.value == "#REF!":
+                if cell.value is None:
                     continue
                 engine_cell = engine_sheet.get_cell(cell.coordinate)
                 if engine_cell is None:

@@ -10,6 +10,7 @@ Two layers:
 """
 
 import ast
+import collections
 import unittest
 from datetime import datetime
 
@@ -75,10 +76,10 @@ class TestReferences(TranslationCase):
 
     def test_ref_error(self):
         self.check([
-            ("=#REF!", "'#REF!'"),
-            ("=Hoja!#REF!", "'#REF!'"),
-            ("=#REF!+1", "'#REF!'+1"),
-            ("=SUM(#REF!)", "SUM('#REF!')"),
+            ("=#REF!", "___error___REF"),
+            ("=Hoja!#REF!", "___error___REF"),
+            ("=#REF!+1", "___error___REF+1"),
+            ("=SUM(#REF!)", "SUM(___error___REF)"),
         ])
 
 
@@ -142,14 +143,16 @@ class TestLogicalNumberErrorOperands(TranslationCase):
 
     def test_errors(self):
         self.check([
-            ("=#N/A", "'#N/A'"),
-            ("=#DIV/0!", "'#DIV/0!'"),
-            ("=#VALUE!", "'#VALUE!'"),
-            ("=#NAME?", "'#NAME?'"),
-            ("=#NUM!", "'#NUM!'"),
-            ("=#NULL!", "'#NULL!'"),
-            ("=IFERROR(A1,#N/A)", "IFERROR(A1,'#N/A')"),
-            ("=IF(A1>0,#DIV/0!,1)", "IF(A1>0,'#DIV/0!',1)"),
+            ("=#N/A", "___error___NA"),
+            ("=#DIV/0!", "___error___DIV0"),
+            ("=#VALUE!", "___error___VALUE"),
+            ("=#NAME?", "___error___NAME"),
+            ("=#NUM!", "___error___NUM"),
+            ("=#NULL!", "___error___NULL"),
+            ("=#GETTING_DATA", "___error___GETTING_DATA"),
+            ("=IFERROR(A1,#N/A)", "IFERROR(A1,___error___NA)"),
+            ("=IF(A1>0,#DIV/0!,1)", "IF(A1>0,___error___DIV0,1)"),
+            ('="#N/A"', "'#N/A'"),  # text that looks like an error stays text
         ])
 
 
@@ -332,6 +335,7 @@ DATA = {
     "B1": True, "B2": False,
     "C1": "abc", "C2": "5",
     "D1": 2.5, "D2": 0, "D3": 2.0,
+    "E1": "#N/A",  # openpyxl stores error codes as error cells
     # horizontal lookup table, H10:K12
     "H10": "code", "I10": 1, "J10": 2, "K10": 3,
     "H11": "name", "I11": "uno", "J11": "dos", "K11": "tres",
@@ -380,8 +384,8 @@ EVALUATION_CASES = [
     ("=A1-Z99", 10),
     ("=Z99-A1", -10),
     ("=Z99/A1", 0.0),
-    ("=A1/Z99", None),
-    ('=A1/"0"', None),
+    ("=A1/Z99", "#DIV/0!"),
+    ('=A1/"0"', "#DIV/0!"),
     ("=Z99^2", 0),
     ("=-Z99", 0),
     # comparisons follow Excel: numbers < text < logicals, text case-insensitive
@@ -441,6 +445,28 @@ EVALUATION_CASES = [
     ("=IFERROR(A1,#N/A)", 10),
     ("=IFERROR(C1*1,#N/A)", "#N/A"),
     ("=IFERROR(C2*1,#N/A)", 5.0),
+    # errors propagate until IFERROR catches them
+    ("=1/0", "#DIV/0!"),
+    ("=1/0+1", "#DIV/0!"),
+    ('="x"&1/0', "#DIV/0!"),
+    ("=IFERROR(1/0,\"div\")", "div"),
+    ('=C1*1', "#VALUE!"),
+    ("=E1", "#N/A"),
+    ("=E1+1", "#N/A"),
+    ("=-E1", "#N/A"),
+    ("=E1=E1", "#N/A"),
+    ("=SUM(E1:E2)", "#N/A"),
+    ("=IF(E1>0,1,2)", "#N/A"),
+    ("=IF(TRUE,1,E1)", 1),
+    ("=IFERROR(E1,0)", 0),
+    ("=IFERROR(E1,1/0)", "#DIV/0!"),
+    ("=COUNTIF(E1:E2,1)", 0),
+    ("=HLOOKUP(E1,I10:K12,2)", "#N/A"),
+    ('=IFERROR(HLOOKUP(9,I10:K12,2,FALSE),"none")', "none"),
+    ('=IFERROR("#N/A","not an error")', "#N/A"),
+    ('=IFERROR(#REF!,"ref")', "ref"),
+    ("=ROUNDUP(1/0,1)", "#DIV/0!"),
+    ('=TEXT(1/0,"0")', "#DIV/0!"),
     # percent
     ("=50%", 0.5),
     ("=1/50%", 2.0),
@@ -486,15 +512,15 @@ EVALUATION_CASES = [
     ("=HLOOKUP(2,I10:K12,2)", "dos"),
     ("=HLOOKUP(2,I10:K12,3,FALSE)", 200),
     ("=HLOOKUP(2.5,I10:K12,3)", 200),
-    ("=HLOOKUP(2.5,I10:K12,3,FALSE)", None),
+    ("=HLOOKUP(2.5,I10:K12,3,FALSE)", "#N/A"),
     ("=HLOOKUP(99,I10:K12,2)", "tres"),
-    ("=HLOOKUP(0,I10:K12,2)", None),
+    ("=HLOOKUP(0,I10:K12,2)", "#N/A"),
     ("=HLOOKUP(2,H10:K12,3)", 200),
     ("=HLOOKUP(\"DOS\",I11:K12,2,FALSE)", 200),
     ("=HLOOKUP(\"CODE\",H10:K12,3,FALSE)", "amount"),
     ("=HLOOKUP(A1/5,$I$10:$K$12,3)", 200),
     ("=HLOOKUP(2,I10:K12,1)", 2),
-    ("=HLOOKUP(2,I10:K12,4)", None),
+    ("=HLOOKUP(2,I10:K12,4)", "#REF!"),
     # TEXT
     ('=TEXT(1234.5,"0")', "1235"),
     ('=TEXT(2.5,"0")', "3"),
@@ -634,16 +660,17 @@ class TestPropagation(unittest.TestCase):
         cells = {f"A{row}": f"=A{row + 1}+1" for row in range(1, size)}
         cells[f"A{size}"] = 1
         original_update, original_recalculate = SheetCell.update, SheetCell.recalculate
-        calls = []
-        SheetCell.update = lambda cell: calls.append("update") or original_update(cell)
-        SheetCell.recalculate = lambda cell: calls.append("recalculate") or original_recalculate(cell)
+        updates, recalculations = [], collections.Counter()
+        SheetCell.update = lambda cell: updates.append(cell) or original_update(cell)
+        SheetCell.recalculate = lambda cell: recalculations.update([id(cell)]) or original_recalculate(cell)
         try:
             manager = load({"Chain": cells})
         finally:
             SheetCell.update, SheetCell.recalculate = original_update, original_recalculate
         self.assertEqual(value(manager, "Chain", "A1"), size)
-        self.assertEqual(calls.count("update"), 0)
-        self.assertEqual(calls.count("recalculate"), size)
+        self.assertEqual(updates, [])
+        # once when the cell is built, once in the dependency-ordered pass
+        self.assertLessEqual(max(recalculations.values()), 2)
         # after loading, changes still propagate
         manager.get_sheet("Chain").get_cell(f"A{size}").set_operation(Value(10))
         self.assertEqual(value(manager, "Chain", "A1"), size + 9)
@@ -653,6 +680,14 @@ class TestPropagation(unittest.TestCase):
             manager = load({"Loop": {"A1": "=B1+1", "B1": "=A1+1", "C1": 5, "D1": "=C1*2"}})
         self.assertIn("circular reference", logs.output[0])
         self.assertEqual(value(manager, "Loop", "D1"), 10)
+
+    def test_error_clears_when_the_cause_is_fixed(self):
+        manager = load({"Main": {"A1": "=1/B1", "A2": "=A1*2", "A3": "=IFERROR(A2,-1)", "B1": 0}})
+        self.assertEqual(value(manager, "Main", "A2"), "#DIV/0!")
+        self.assertEqual(value(manager, "Main", "A3"), -1)
+        manager.get_sheet("Main").get_cell("B1").set_operation(Value(4))
+        self.assertEqual(value(manager, "Main", "A2"), 0.5)
+        self.assertEqual(value(manager, "Main", "A3"), 0.5)
 
     def test_colliding_sheet_names_fail(self):
         with self.assertRaisesRegex(ValueError, "collide"):

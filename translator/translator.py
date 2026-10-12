@@ -1,7 +1,8 @@
 from Sheet import SheetsManager, Sheet
 from SheetCell import SheetCell
 from operations.operation_factory import OperationFactory, OperationTypes
-from translator.AstProcessor import OperationProcessor, encode_ref, normalize_sheet_name
+from translator.AstProcessor import OperationProcessor, encode_error, encode_ref, normalize_sheet_name
+from operations.operations import ExcelError
 from openpyxl.formula.tokenizer import Tokenizer, Token
 import ast
 import graphlib
@@ -105,12 +106,12 @@ def translate_operand(subtype, value):
     if subtype == Token.LOGICAL:
         return "True" if value.upper() == "TRUE" else "False"
     if subtype == Token.ERROR:
-        return repr(value)
+        return encode_error(value)
     if subtype == Token.NUMBER:
         return value
     # RANGE: A1, $A$1, A1:B2, Hoja!A1, 'Mi Hoja'!A1:B2
     if "#REF!" in value:
-        return repr("#REF!")
+        return encode_error("#REF!")
     start, colon, end = value.partition(":")  # sheet names can't contain ':'
     if "!" in end:
         if "!" not in start:
@@ -176,13 +177,14 @@ def evaluate_in_dependency_order(cells):
 def generate_value_cell(cell, sheet_name):
     sheet = sheet_manager.get_sheet(sheet_name)
     sheet_cell = sheet.get_cell(cell.coordinate)
+    value = ExcelError(cell.value) if cell.data_type == "e" else cell.value
     if sheet_cell == None:
-        sheet_cell = SheetCell(OperationTypes.Value, cell.value)
+        sheet_cell = SheetCell(OperationTypes.Value, value)
         sheet_cell.set_coordinate(cell.coordinate)
         sheet_cell.set_sheet(sheet_name)
 
     else:
-        sheet_cell.operation = OperationFactory.get_instance(OperationTypes.Value, cell.value)
+        sheet_cell.operation = OperationFactory.get_instance(OperationTypes.Value, value)
     sheet.set_cell(cell.coordinate, sheet_cell)
 
 

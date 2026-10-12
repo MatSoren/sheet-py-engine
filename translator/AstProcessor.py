@@ -5,6 +5,8 @@ from operations.operation_factory import OperationTypes, OperationFactory
 from SheetCell import SheetCell
 from Sheet import SheetsManager
 import openpyxl.utils.cell as utils
+from openpyxl.formula.tokenizer import Tokenizer
+from operations.operations import ExcelError
 
 sheet_manager = SheetsManager()
 bin_ope_dict = {
@@ -18,6 +20,8 @@ bin_ope_dict = {
 
 REF_MARKER = "___ref___"
 RANGE_MARKER = "___range___"
+ERROR_MARKER = "___error___"
+error_codes = {re.sub(r"\W", "", code): code for code in Tokenizer.ERROR_CODES}  # 'NA': '#N/A'
 
 
 def normalize_sheet_name(name):
@@ -39,6 +43,11 @@ def encode_ref(sheet, ref):
     if sheet is None:
         return ref
     return f"_{normalize_sheet_name(sheet)}{REF_MARKER}{ref}"
+
+
+def encode_error(code):
+    """'#N/A' -> '___error___NA'; visit_Name turns it back into an ExcelError."""
+    return ERROR_MARKER + re.sub(r"\W", "", code)
 
 
 def decode_ref(identifier):
@@ -78,6 +87,9 @@ class OperationProcessor(ast.NodeVisitor):
         return super().visit(node.value)
 
     def visit_Name(self, node):
+        if node.id.startswith(ERROR_MARKER):
+            code = error_codes[node.id[len(ERROR_MARKER):]]
+            return OperationFactory.get_instance(OperationTypes.Value, ExcelError(code))
         cell: SheetCell = None
         sheet_name, cell_name = decode_ref(node.id)
         current_sheet = self.current_sheet

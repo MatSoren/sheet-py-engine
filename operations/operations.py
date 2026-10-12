@@ -51,6 +51,44 @@ class NoneOperation(Operation):
         return None
 
 
+class ExcelError(Exception):
+    """An Excel error value (#N/A, #DIV/0!, ...).
+
+    Cells hold it as their value; operations raise it, so it propagates through any formula
+    until IFERROR or the cell itself catches it, like in Excel. It compares equal to its
+    code: ExcelError("#N/A") == "#N/A".
+    """
+
+    def __eq__(self, other):
+        if isinstance(other, (str, ExcelError)):
+            return str(self) == str(other)
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(str(self))
+
+    @classmethod
+    def from_exception(cls, error):
+        """A formula failure -> the error Excel would show for it."""
+        if isinstance(error, ExcelError):
+            return error
+        if isinstance(error, ZeroDivisionError):
+            return cls("#DIV/0!")
+        if isinstance(error, OverflowError):
+            return cls("#NUM!")
+        return cls("#VALUE!")
+
+
+# what evaluating a formula can fail with on spreadsheet data; anything else is a bug
+FORMULA_FAILURES = (ExcelError, ArithmeticError, ValueError, TypeError)
+
+
+def raise_if_error(value):
+    if isinstance(value, ExcelError):
+        raise ExcelError(str(value))  # a fresh one: re-raising would keep growing its traceback
+    return value
+
+
 class Value(Operation):
     def __str__(self):
         return "Value"
@@ -59,7 +97,7 @@ class Value(Operation):
         self.value = value
 
     def operate(self):
-        return self.value
+        return raise_if_error(self.value)
 
 
 class Reference(Operation):
@@ -70,7 +108,7 @@ class Reference(Operation):
         self.cell = cell
 
     def operate(self):
-        return self.cell.calculated_value
+        return raise_if_error(self.cell.calculated_value)
 
 
 class Range(Operation):
@@ -344,7 +382,11 @@ class CountIf(Operation):
             if not isinstance(value, str):
                 return operator == "<>"
             return operation(value.lower(), target.lower())
-        if value is None or isinstance(value, str) or isinstance(value, bool) != isinstance(target, bool):
+        if (
+            value is None
+            or isinstance(value, (str, ExcelError))
+            or isinstance(value, bool) != isinstance(target, bool)
+        ):
             return operator == "<>"
         return operation(value, target)
 
@@ -417,11 +459,7 @@ class BinaryOperation(Operation, ABC):
         self.right = right
 
     def operands(self):
-        """Both sides evaluated; a blank cell counts as 0 in arithmetic, like in Excel.
-
-        ponytail: errors are None too, so an error feeding arithmetic also reads as 0;
-        a real error value would fix it.
-        """
+        """Both sides evaluated; a blank cell counts as 0 in arithmetic, like in Excel."""
         return [0 if value is None else value for value in (self.left.operate(), self.right.operate())]
 
     @staticmethod
@@ -472,9 +510,7 @@ class BinaryMul(BinaryOperation):
 class BinaryDiv(BinaryOperation):
     def operate(self):
         left, right = map(self.as_number, self.operands())
-        if right == 0:
-            return None  # Excel: #DIV/0!
-        return left / right
+        return left / right  # ZeroDivisionError becomes #DIV/0! in the cell
 
 
 class BinaryPow(BinaryOperation):
@@ -514,7 +550,7 @@ class Sum(Operation):
         for cell in _range:
             if cell is None:
                 continue
-            cell_value = cell.calculated_value
+            cell_value = raise_if_error(cell.calculated_value)
             if isinstance(cell_value, (int, float, complex)):
                 sum_calc += cell_value
         return sum_calc
@@ -540,9 +576,11 @@ class Hlookup(Operation):
         first_row = [cell.calculated_value for cell in cells[:width]]
         column = self._find_column(first_row, lookup, self.approximated.operate())
         index = (int(row_index) - 1) * width + (column or 0)
-        if column is None or not 0 <= index < len(cells):
-            return None  # Excel: #N/A / #REF!
-        return cells[index].calculated_value
+        if column is None:
+            raise ExcelError("#N/A")
+        if not 0 <= index < len(cells):
+            raise ExcelError("#REF!")
+        return raise_if_error(cells[index].calculated_value)
 
     @staticmethod
     def _find_column(first_row, lookup, approximated):
@@ -555,7 +593,7 @@ class Hlookup(Operation):
         key = lookup.lower() if is_text else lookup
         found = None
         for column, value in enumerate(first_row):
-            if value is None or isinstance(value, str) != is_text:
+            if value is None or isinstance(value, ExcelError) or isinstance(value, str) != is_text:
                 continue
             value = value.lower() if is_text else value
             if value == key:
@@ -621,8 +659,5 @@ class IfError(Operation):
     def operate(self):
         try:
             return self._then.operate()
-        except:
-            try:
-                return self._else.operate()
-            except:
-                return None
+        except FORMULA_FAILURES:
+            return self._else.operate()

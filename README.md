@@ -105,7 +105,11 @@ sheet.get_cell("B3").calculated_value          # already recalculated
 text conversion: `1` → `"1"`, `TRUE` → `"TRUE"`), postfix `%`, unary `-` / `+`
 
 **Operands** — numbers, strings (with `""` escapes), `TRUE`/`FALSE`, error literals (`#N/A`,
-`#REF!`, `#DIV/0!`, … evaluate to that string), empty arguments (`IF(A1,,1)`)
+`#REF!`, `#DIV/0!`, …), empty arguments (`IF(A1,,1)`)
+
+**Errors** — an `ExcelError` value (`#DIV/0!`, `#N/A`, `#VALUE!`, `#REF!`, `#NUM!`, …) that
+propagates through every formula that uses it until `IFERROR` catches it, as in Excel. It
+compares equal to its code, so `cell.calculated_value == "#N/A"` works.
 
 **References** — same sheet (`A1`), absolute (`$A$1`), cross-sheet (`Sheet!A1`,
 `'2024 Ventas'!A1`), ranges (`A1:B4`, `'Costos-Fijos'!A1:B4`)
@@ -154,9 +158,6 @@ python -m unittest test.test_translator -v
 - **Intersection operator, array constants and 3D references** (`=A1:A3 B1:B3`,
   `={1,2,3}`, `=SUM(Sheet1:Sheet3!A1)`) are not
   supported; they raise a `ValueError` naming the formula.
-- **Errors have no value of their own**: `#N/A` evaluates to the string `"#N/A"`, while
-  computed errors (`/0`, a failed `HLOOKUP`) are `None`, the same as a blank cell, so an
-  error feeding arithmetic reads as 0. `IFERROR` only catches Python exceptions.
 - **Circular references** load with a warning naming the cycle, but their values are not
   meaningful, and writing to a cell inside a cycle recurses until Python's recursion limit.
 - **`detach()` is a no-op**, so observers are never removed.

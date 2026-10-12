@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from operations.operation_factory import OperationFactory, OperationTypes
-from operations.operations import Operation
+from operations.operations import FORMULA_FAILURES, ExcelError, Operation
 
 # Todo Operaciones recursivas
 # Todo Attach de todas las celdas en la traduccion
@@ -33,7 +33,7 @@ class SheetCell(Observer, Subject, Operation):
     def __init__(self, operation=OperationTypes.NoneOperation, *args, **kwargs):
         self.observers = []
         self.operation = OperationFactory.get_instance(operation, *args)
-        self.calculated_value = self.operation.operate()
+        self.recalculate()
         self.coordinate = ""
         self.sheet = ""
 
@@ -69,7 +69,10 @@ class SheetCell(Observer, Subject, Operation):
 
     def recalculate(self):
         """Recomputes this cell's value without notifying its observers."""
-        operation_result = self.operation.operate()
+        try:
+            operation_result = self.operation.operate()
+        except FORMULA_FAILURES as error:
+            operation_result = ExcelError.from_exception(error)
         if isinstance(operation_result,float):
             operation_result = round(operation_result,10)
         self.calculated_value = operation_result 
