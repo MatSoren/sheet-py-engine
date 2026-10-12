@@ -79,6 +79,7 @@ class Range(Operation):
         initial, final = sheet_range.split(":")
         initial_row, initial_col = utils.coordinate_to_tuple(initial)
         final_row, final_col = utils.coordinate_to_tuple(final)
+        self.width = final_col - initial_col + 1
 
         self.cell_range = [
             current_sheet.get_cell(utils.get_column_letter(col) + str(row))
@@ -652,56 +653,47 @@ class Hlookup(Operation):
     def __str__(self):
         return "Hlookup"
 
-    def __init__(self, lookup_value, cell_range, row_index, approximated=True):
+    def __init__(self, lookup_value, cell_range, row_index, approximated=Value(True)):
         self.lookup_value = lookup_value
         self.cell_range = cell_range
         self.row_index = row_index
         self.approximated = approximated
 
     def operate(self):
-        first_row_indicator = self._get_indicator()
-        return self._match(first_row_indicator)
-
-    def _get_indicator(self):
-        first_row_indicator = ""
-        first_element = self.cell_range.operate()[0]
-
-        if first_element is None:
+        lookup = self.lookup_value.operate()
+        row_index = self.row_index.operate()
+        if lookup is None or row_index is None:
             return None
+        cells = self.cell_range.operate()
+        width = self.cell_range.width
+        first_row = [cell.calculated_value for cell in cells[:width]]
+        column = self._find_column(first_row, lookup, self.approximated.operate())
+        index = (int(row_index) - 1) * width + (column or 0)
+        if column is None or not 0 <= index < len(cells):
+            return None  # Excel: #N/A / #REF!
+        return cells[index].calculated_value
 
-        first_char = first_element[0]
-        for char in first_char:
-            first_row_indicator += char
-        return first_row_indicator
+    @staticmethod
+    def _find_column(first_row, lookup, approximated):
+        """Exact: first match. Approximate: last value <= lookup, assuming an ascending row.
 
-    def _match(self, first_row_indicator):
-        row_lenght = 100000
-        column_index = None
-        _range = self.cell_range.operate()
-        for index, cell in enumerate(_range):
-            if cell is None:
+        Like Excel, values of the other kind (text vs number) are skipped, text is
+        case-insensitive.
+        """
+        is_text = isinstance(lookup, str)
+        key = lookup.lower() if is_text else lookup
+        found = None
+        for column, value in enumerate(first_row):
+            if value is None or isinstance(value, str) != is_text:
                 continue
-            value_type = str(type(self.lookup_value))
-            same_type = str(type(cell.calculated_value)) != value_type
-            if column_index is not None and same_type:
-                if not approximated:
-                    if self.lookup_value == cell.calculated_value:
-                        column_index = index
-                else:
-                    if self.lookup_value < cell.calculated_value:
-                        column_index = index
-
-            if cell.coordinate.count(first_row_indicator) == 0:
-                row_lenght = index + 1
-                break
-
-        if column_index is None:
-            return None
-        lookup_value_index = row_lenght * row_index + column_index
-        if lookup_value_index > len(_range):
-            logging.warning("index out of range")
-            return None
-        return _range[lookup_value_index]
+            value = value.lower() if is_text else value
+            if value == key:
+                return column
+            if approximated:
+                if value > key:
+                    break
+                found = column
+        return found if approximated else None
 
 
 class Text(Operation):

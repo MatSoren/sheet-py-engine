@@ -313,6 +313,10 @@ DATA = {
     "B1": True, "B2": False,
     "C1": "abc", "C2": "5",
     "D1": 2.5, "D2": 0, "D3": 2.0,
+    # horizontal lookup table, H10:K12
+    "H10": "code", "I10": 1, "J10": 2, "K10": 3,
+    "H11": "name", "I11": "uno", "J11": "dos", "K11": "tres",
+    "H12": "amount", "I12": 100, "J12": 200, "K12": 300,
 }
 
 OTHER_SHEETS = {
@@ -427,6 +431,19 @@ EVALUATION_CASES = [
     ("=COUNTIF(A1:A3,Z99)", 0),
     ("=COUNTIF(Z1:Z3,\"\")", 3),
     ("=COUNTIF('Costos-Fijos'!A1:A3,\">1\")", 2),
+    # HLOOKUP
+    ("=HLOOKUP(2,I10:K12,2)", "dos"),
+    ("=HLOOKUP(2,I10:K12,3,FALSE)", 200),
+    ("=HLOOKUP(2.5,I10:K12,3)", 200),
+    ("=HLOOKUP(2.5,I10:K12,3,FALSE)", None),
+    ("=HLOOKUP(99,I10:K12,2)", "tres"),
+    ("=HLOOKUP(0,I10:K12,2)", None),
+    ("=HLOOKUP(2,H10:K12,3)", 200),
+    ("=HLOOKUP(\"DOS\",I11:K12,2,FALSE)", 200),
+    ("=HLOOKUP(\"CODE\",H10:K12,3,FALSE)", "amount"),
+    ("=HLOOKUP(A1/5,$I$10:$K$12,3)", 200),
+    ("=HLOOKUP(2,I10:K12,1)", 2),
+    ("=HLOOKUP(2,I10:K12,4)", None),
     # MROUND rounds halves away from zero, like Excel (Python's round() would give 10 / 300)
     ("=MROUND(12.5,5)", 15),
     ("=MROUND(325,50)", 350),

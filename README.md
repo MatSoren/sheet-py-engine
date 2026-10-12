@@ -109,7 +109,7 @@ text conversion: `1` → `"1"`, `TRUE` → `"TRUE"`), postfix `%`, unary `-` / `
 `'2024 Ventas'!A1`), ranges (`A1:B4`, `'Costos-Fijos'!A1:B4`)
 
 **Functions** — `SUM`, `IF`, `AND`, `OR`, `COUNTIF`, `IFERROR`, `TEXT`, `TODAY`, `MROUND`,
-`ROUNDUP`, `ROUNDDOWN`, in any case (`if(`, `Sum(`)
+`ROUNDUP`, `ROUNDDOWN`, `HLOOKUP`, in any case (`if(`, `Sum(`)
 
 **Any sheet name** — sheets are registered under `normalize_sheet_name(name)` (every
 non-alphanumeric ASCII char becomes `_`): `Cost Report` → `Cost_Report`, `Costos-Fijos` →
