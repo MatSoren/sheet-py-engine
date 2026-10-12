@@ -7,6 +7,7 @@ check the engine against, cell by cell.
     python -m test.test examples/example.xlsx
 """
 
+import math
 import sys
 
 from openpyxl import load_workbook
@@ -14,7 +15,7 @@ from openpyxl import load_workbook
 from translator import translator
 
 
-def check_workbook(path, tolerance=6):
+def check_workbook(path, rel_tol=1e-9):
     """Returns the list of cells where the engine disagrees with Excel."""
     manager = translator.translate(load_workbook(path, data_only=False))
     expected_wb = load_workbook(path, data_only=True)
@@ -33,7 +34,9 @@ def check_workbook(path, tolerance=6):
                     continue
                 expected, actual = cell.value, engine_cell.calculated_value
                 if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-                    failed = round(expected, tolerance) != round(actual, tolerance)
+                    # relative, not rounded: files may cache ~10 significant digits, and
+                    # rounding both sides flips on a .5 boundary
+                    failed = not math.isclose(expected, actual, rel_tol=rel_tol, abs_tol=rel_tol)
                 else:
                     failed = expected != actual
                 if failed:
