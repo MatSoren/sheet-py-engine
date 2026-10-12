@@ -154,8 +154,9 @@ python -m unittest test.test_translator -v
 - **Intersection operator, array constants and 3D references** (`=A1:A3 B1:B3`,
   `={1,2,3}`, `=SUM(Sheet1:Sheet3!A1)`) are not
   supported; they raise a `ValueError` naming the formula.
-- **Error literals are plain strings**: `#N/A` evaluates to `"#N/A"`, and `IFERROR` only
-  catches Python exceptions, not those values.
+- **Errors have no value of their own**: `#N/A` evaluates to the string `"#N/A"`, while
+  computed errors (`/0`, a failed `HLOOKUP`) are `None`, the same as a blank cell, so an
+  error feeding arithmetic reads as 0. `IFERROR` only catches Python exceptions.
 - **No cycle detection.** Circular references recurse until Python's recursion limit.
 - **`detach()` is a no-op**, so observers are never removed.
 - Dates, formatting, charts, pivot tables and macros are out of scope. This computes

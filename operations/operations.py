@@ -408,21 +408,31 @@ class BinaryOperation(Operation, ABC):
         self.left = left
         self.right = right
 
+    def operands(self):
+        """Both sides evaluated; a blank cell counts as 0 in arithmetic, like in Excel.
+
+        ponytail: errors are None too, so an error feeding arithmetic also reads as 0;
+        a real error value would fix it.
+        """
+        return [0 if value is None else value for value in (self.left.operate(), self.right.operate())]
+
+    @staticmethod
+    def as_number(value):
+        return float(value) if isinstance(value, str) else value
+
 
 class BinaryAdd(BinaryOperation):
     def operate(self):
-        left = self.left.operate()
-        right = self.right.operate()
-        if left is not None and right is not None:
-            if isinstance(left, datetime) or isinstance(right, datetime):
-                return self.add_dates(left, right)
-            try:
-                left = float(left)
-                right = float(right)
-            except:
-                left = str(left)
-                right = str(right)
-            return left + right
+        left, right = self.operands()
+        if isinstance(left, datetime) or isinstance(right, datetime):
+            return self.add_dates(left, right)
+        try:
+            left = float(left)
+            right = float(right)
+        except:
+            left = str(left)
+            right = str(right)
+        return left + right
 
     def add_dates(self, left, right):
         number = ""
@@ -441,55 +451,28 @@ class BinaryAdd(BinaryOperation):
 
 class BinarySub(BinaryOperation):
     def operate(self):
-        left = self.left.operate()
-        right = self.right.operate()
-        if left is not None and right is not None:
-            return left - right
+        left, right = self.operands()
+        return left - right
 
 
 class BinaryMul(BinaryOperation):
     def operate(self):
-        left = self.left.operate()
-        right = self.right.operate()
-        if left is not None and right is not None:
-            if isinstance(left, str):
-                left = float(left)
-
-            if isinstance(right, str):
-                right = float(right)
-
-            return left * right
+        left, right = map(self.as_number, self.operands())
+        return left * right
 
 
 class BinaryDiv(BinaryOperation):
     def operate(self):
-        left = self.left.operate()
-        right = self.right.operate()
-        if left is not None and right is not None:
-            if right == 0:
-                return None
-
-            if isinstance(left, str):
-                left = float(left)
-
-            if isinstance(right, str):
-                right = float(right)
-
-            return left / right
+        left, right = map(self.as_number, self.operands())
+        if right == 0:
+            return None  # Excel: #DIV/0!
+        return left / right
 
 
 class BinaryPow(BinaryOperation):
     def operate(self):
-        left = self.left.operate()
-        right = self.right.operate()
-        if left is not None and right is not None:
-            if isinstance(left, str):
-                left = float(left)
-
-            if isinstance(right, str):
-                right = float(right)
-
-            return left**right
+        left, right = map(self.as_number, self.operands())
+        return left**right
 
 
 def to_excel_text(value):

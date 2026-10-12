@@ -354,6 +354,17 @@ EVALUATION_CASES = [
     ("=IF(A1<>0,1,2)", 1),
     ("=IF(D2<>0,1,2)", 2),
     ('=C1="ABC"', True),
+    # a blank cell counts as 0 in arithmetic
+    ("=Z99*A1", 0),
+    ("=A1*Z99", 0),
+    ("=Z99+1", 1),
+    ("=A1-Z99", 10),
+    ("=Z99-A1", -10),
+    ("=Z99/A1", 0.0),
+    ("=A1/Z99", None),
+    ('=A1/"0"', None),
+    ("=Z99^2", 0),
+    ("=-Z99", 0),
     # comparisons follow Excel: numbers < text < logicals, text case-insensitive
     ('="1"<"12"', True),
     ('="b">"A"', True),
