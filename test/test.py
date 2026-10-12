@@ -21,7 +21,7 @@ def check_workbook(path, tolerance=6):
 
     mismatches = []
     for sheet_name in expected_wb.sheetnames:
-        engine_sheet = manager.get_sheet(sheet_name)
+        engine_sheet = manager.get_sheet(translator.normalize_sheet_name(sheet_name))
         if engine_sheet is None:
             continue
         for row in expected_wb[sheet_name].iter_rows():

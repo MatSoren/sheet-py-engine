@@ -5,7 +5,9 @@ from operations.operations import (
     BinarySub,
     BinaryMul,
     BinaryDiv,
+    BinaryPow,
     BlankCondition,
+    Concat,
     CountIf,
     DiferentCondition,
     EqualCondition,
@@ -37,7 +39,9 @@ class OperationTypes(Enum):
     BinarySub = ("BinarySub",)
     BinaryMul = ("BinaryMul",)
     BinaryDiv = ("BinaryDiv",)
+    BinaryPow = ("BinaryPow",)
     BlankCondition = ("BlankCondition",)
+    Concat = ("Concat",)
     CountIf = ("CountIf",)
     DiferentCondition = ("DiferentCondition",)
     EqualCondition = ("EqualCondition",)
@@ -69,7 +73,9 @@ class OperationFactory:
         OperationTypes.BinarySub: BinarySub,
         OperationTypes.BinaryMul: BinaryMul,
         OperationTypes.BinaryDiv: BinaryDiv,
+        OperationTypes.BinaryPow: BinaryPow,
         OperationTypes.BlankCondition: BlankCondition,
+        OperationTypes.Concat: Concat,
         OperationTypes.CountIf: CountIf,
         OperationTypes.DiferentCondition: DiferentCondition,
         OperationTypes.EqualCondition: EqualCondition,

@@ -584,6 +584,36 @@ class BinaryDiv(BinaryOperation):
             return left / right
 
 
+class BinaryPow(BinaryOperation):
+    def operate(self):
+        left = self.left.operate()
+        right = self.right.operate()
+        if left is not None and right is not None:
+            if isinstance(left, str):
+                left = float(left)
+
+            if isinstance(right, str):
+                right = float(right)
+
+            return left**right
+
+
+def to_excel_text(value):
+    """How Excel shows a value inside a concatenation: 1.0 -> '1', True -> 'TRUE'."""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return format(value, ".15g")
+    return str(value)
+
+
+class Concat(BinaryOperation):
+    def operate(self):
+        return to_excel_text(self.left.operate()) + to_excel_text(self.right.operate())
+
+
 class Sum(Operation):
     def __str__(self):
         return "Sum"

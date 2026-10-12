@@ -1,8 +1,8 @@
 from Sheet import SheetsManager, Sheet
 from SheetCell import SheetCell
 from operations.operation_factory import OperationTypes
-from operations.operations import Value
-from translator.AstProcessor import OperationProcessor
+from translator.AstProcessor import OperationProcessor, encode_ref, normalize_sheet_name
+from openpyxl.formula.tokenizer import Tokenizer, Token
 import ast
 import re
 import sys
@@ -10,24 +10,83 @@ import sys
 sheet_manager = SheetsManager()
 astProcessor = OperationProcessor()
 
-sheet_simbol_map = {
-    "!": "___ref___",
-    ":": "___range___",
-    "&": "+",
-    "%": "+ ___percentage___",
-    ",,": ", None,",
-    "if(": "IF(",
-    "and(": "AND(",
-}
+# Excel infix operators that are spelled differently in Python. '&' becomes '|' on purpose:
+# '|' sits between comparisons and '+' in Python's precedence, same as '&' in Excel.
+infix_operator_map = {"=": "==", "<>": "!=", "^": "**", "&": "|"}
 
 
-def normalize_sheet_name(name):
-    """Sheet names reach ast.parse as identifiers, so spaces have to go.
+def formula_to_python(formula):
+    """Excel formula ('=...') -> Python expression that ast.parse accepts.
 
-    'CASH FLOW'!A1 would not parse; CASHFLOW!A1 does. Sheets are registered under the
-    normalized name, so look them up the same way.
+    Goes token by token (openpyxl's tokenizer), so strings, references and operators are
+    never confused with each other. OperationProcessor turns the parsed tree into operations.
     """
-    return name.replace(" ", "")
+    out = []
+    open_starts = []  # index in out where each open paren / function call started
+    last_operand_start = 0  # index in out where the last complete operand started
+    previous = None  # last non-whitespace token
+    items = Tokenizer(formula).items
+
+    for index, token in enumerate(items):
+        kind, subtype, value = token.type, token.subtype, token.value
+
+        if kind == Token.WSPACE:
+            following = next((t for t in items[index + 1:] if t.type != Token.WSPACE), None)
+            if (
+                previous is not None
+                and following is not None
+                and (previous.type == Token.OPERAND or previous.subtype == Token.CLOSE)
+                and (following.type == Token.OPERAND or following.subtype == Token.OPEN)
+            ):
+                raise ValueError(f"intersection operator (space between ranges) not supported: {formula}")
+            continue
+        if kind == Token.ARRAY:
+            raise ValueError(f"array constants ({{...}}) not supported: {formula}")
+
+        # empty argument: IF(A1,,1) / IF(A1,1,)
+        if previous is not None and (
+            (kind == Token.SEP and (previous.type == Token.SEP or (previous.type == Token.FUNC and previous.subtype == Token.OPEN)))
+            or (kind == Token.FUNC and subtype == Token.CLOSE and previous.type == Token.SEP)
+        ):
+            out.append("None")
+
+        if kind == Token.OPERAND:
+            last_operand_start = len(out)
+            out.append(translate_operand(subtype, value))
+        elif subtype == Token.OPEN:  # FUNC or PAREN
+            open_starts.append(len(out))
+            out.append(value[:-1].upper() + "(" if kind == Token.FUNC else value)
+        elif subtype == Token.CLOSE:
+            last_operand_start = open_starts.pop()
+            out.append(value)
+        elif kind == Token.OP_IN:
+            out.append(infix_operator_map.get(value, value))
+        elif kind == Token.OP_POST:  # '%' binds to the operand right before it: 1/50% -> 1/(50/100)
+            out.insert(last_operand_start, "(")
+            out.append("/100)")
+        else:  # OP_PRE (unary +/-) and SEP (',')
+            out.append(value)
+        previous = token
+
+    return "".join(out)
+
+
+def translate_operand(subtype, value):
+    if subtype == Token.TEXT:
+        return repr(value[1:-1].replace('""', '"'))
+    if subtype == Token.LOGICAL:
+        return "True" if value.upper() == "TRUE" else "False"
+    if subtype == Token.ERROR:
+        return repr(value)
+    if subtype == Token.NUMBER:
+        return value
+    # RANGE: A1, $A$1, A1:B2, Hoja!A1, 'Mi Hoja'!A1:B2
+    if "#REF!" in value:
+        return repr("#REF!")
+    sheet, _, ref = value.rpartition("!")
+    if sheet.startswith("'"):
+        sheet = sheet[1:-1].replace("''", "'")
+    return encode_ref(sheet or None, ref.replace("$", ""))
 
 
 def translate(workbook):
@@ -39,8 +98,11 @@ def translate(workbook):
         "d": generate_value_cell,
         "e": generate_value_cell,
     }
-    for sheet_name in workbook.sheetnames:
-        sheet_manager.instantiate_sheet(normalize_sheet_name(sheet_name))
+    normalized_names = [normalize_sheet_name(name) for name in workbook.sheetnames]
+    if len(set(normalized_names)) != len(normalized_names):
+        raise ValueError(f"sheet names collide once normalized: {workbook.sheetnames}")
+    for sheet_name in normalized_names:
+        sheet_manager.instantiate_sheet(sheet_name)
     for raw_name in workbook.sheetnames:
         sheet = workbook[raw_name]
         sheet_name = normalize_sheet_name(raw_name)
@@ -121,34 +183,7 @@ formule_generators = {
 def generate_formula_cell(cell, sheet_name):
     current_sheet: Sheet = sheet_manager.get_sheet(sheet_name)
 
-    # remove '='
-    cell_formula = str(cell.value)
-    if cell_formula.find("=#REF!") != -1:
-        current_cell = SheetCell()
-        operation = Value("#REF!")
-        current_cell.set_operation(operation)
-        current_sheet.set_cell(cell.coordinate, current_cell)
-        return
-    if cell_formula.startswith("="):
-        cell_formula = cell_formula[1:]
-
-    # reemplazos simboilos invalidos en python para permitir parsear, en el astprocessor se revertiran
-    for simbol, replacement in sheet_simbol_map.items():
-        # Todo Eventualmente resolver esto de otra manera
-        # caso particular donde la sheet esta referenciada como 'sheet name', esto rompe el parser
-        if simbol == "!":
-            # 'Sheet Name'!A1 -> SheetName!A1, matching normalize_sheet_name()
-            pattern = r'["\']([\w\d\s]+)["\']!'
-            cell_formula = re.sub(
-                pattern, lambda m: normalize_sheet_name(m.group(1)) + "!", cell_formula
-            )
-        cell_formula = cell_formula.replace(simbol, replacement)
-
-    # TODO reemplazo de = en condiciones logicas por ==. Ver si no interfiere con otra cosa
-    pattern = r"(?<![<>])="
-    cell_formula = re.sub(pattern, r"==", cell_formula)
-
-    tree = ast.parse(cell_formula)
+    tree = ast.parse(formula_to_python(str(cell.value)))
     current_cell = current_sheet.get_cell(cell.coordinate)
 
     if current_cell is None:

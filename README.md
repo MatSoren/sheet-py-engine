@@ -25,7 +25,7 @@ another sheet.
 ## How it works
 
 ```
-.xlsx ──openpyxl──> formula strings ──rewrite──> Python-parseable expressions
+.xlsx ──openpyxl──> formula tokens ──translate──> Python-parseable expressions
                                                           │
                                                     ast.parse
                                                           │
@@ -39,9 +39,11 @@ another sheet.
                                            (Observer + Subject + Operation)
 ```
 
-1. **`translator/translator.py`** walks the workbook. Excel syntax that Python's parser
-   would reject gets rewritten first — `Sheet!A1` becomes a marker token, `A1:B4` another,
-   `&` becomes `+`, and so on.
+1. **`translator/translator.py`** walks the workbook. `formula_to_python()` runs each formula
+   through openpyxl's formula tokenizer and translates it token by token, so strings,
+   references and operators never get mixed up: `'Mi Hoja'!$A$1:B2` becomes one identifier,
+   `<>` becomes `!=`, `^` becomes `**`, `&` becomes `|` (same precedence slot as in Excel),
+   `"a:b"` stays a string. It is a pure string → string function, testable without a workbook.
 2. **`ast.parse`** — Python's own parser, from the standard library — turns the rewritten
    formula into a syntax tree. No hand-written expression parser.
 3. **`translator/AstProcessor.py`** visits that tree and emits an `Operation` tree.
@@ -97,16 +99,23 @@ sheet.get_cell("B3").calculated_value          # already recalculated
 
 ## Supported
 
-**Operators** — `+ - * /`, comparisons (`= < <= > >=`), `&` (concatenation), `%`
+**Operators** — `+ - * / ^`, comparisons (`= <> < <= > >=`), `&` (concatenation, Excel
+text conversion: `1` → `"1"`, `TRUE` → `"TRUE"`), postfix `%`, unary `-` / `+`
 
-**References** — same sheet (`A1`), cross-sheet (`Sheet!A1`), ranges (`A1:B4`)
+**Operands** — numbers, strings (with `""` escapes), `TRUE`/`FALSE`, error literals (`#N/A`,
+`#REF!`, `#DIV/0!`, … evaluate to that string), empty arguments (`IF(A1,,1)`)
 
-**Functions** — `SUM`, `IF`, `AND`, `COUNTIF`, `IFERROR`, `TEXT`, `TODAY`, `MROUND`,
-`ROUNDUP`, `ROUNDDOWN`
+**References** — same sheet (`A1`), absolute (`$A$1`), cross-sheet (`Sheet!A1`,
+`'2024 Ventas'!A1`), ranges (`A1:B4`, `'Costos-Fijos'!A1:B4`)
 
-**Sheet names with spaces** — formulas become Python identifiers before parsing, so spaces
-are stripped from sheet names. A sheet called `Cost Report` is registered as `CostReport`
-and looked up that way; `'Cost Report'!B1` inside a formula resolves fine either way.
+**Functions** — `SUM`, `IF`, `AND`, `OR`, `COUNTIF`, `IFERROR`, `TEXT`, `TODAY`, `MROUND`,
+`ROUNDUP`, `ROUNDDOWN`, in any case (`if(`, `Sum(`)
+
+**Any sheet name** — sheets are registered under `normalize_sheet_name(name)` (every
+non-alphanumeric ASCII char becomes `_`): `Cost Report` → `Cost_Report`, `Costos-Fijos` →
+`Costos_Fijos`, `Año 1` → `A_o_1`. Formulas use the same function, so they always match; the
+CLI accepts the real name (`'Cost Report!B1'`). Two sheets that normalize to the same name
+make `translate()` fail instead of mixing them.
 
 ## Testing
 
@@ -118,6 +127,13 @@ python -m test.test path/to/book.xlsx
 ```
 
 It prints every cell where the engine disagrees with Excel.
+
+`test/test_translator.py` covers the translation itself (every token type, exact output plus
+`ast.parse`) and end-to-end evaluation on workbooks built in memory, including propagation:
+
+```sh
+python -m unittest test.test_translator -v
+```
 
 > **Note:** this only means something for files saved by Excel or LibreOffice. Workbooks
 > written by openpyxl — including `examples/example.xlsx` — carry no cached values, so the
@@ -132,6 +148,16 @@ It prints every cell where the engine disagrees with Excel.
 - **One workbook per process.** `SheetsManager._sheet_dict` is class-level state and
   `translator` holds a module-level manager, so loading a second workbook writes into the
   same registry as the first.
+- **Excel precedence quirks of `^`.** Python's precedence and associativity are used, so
+  `=-2^2` gives `-4` (Excel: `4`, unary minus binds tighter) and `=2^3^2` gives `512`
+  (Excel: `64`, left-associative). Parenthesize to be safe. `%` combined with `^` works
+  (`=2^50%` is `2^0.5`), since `%` wraps the operand right before it.
+- **Intersection operator and array constants** (`=A1:A3 B1:B3`, `={1,2,3}`) are not
+  supported; they raise a `ValueError` naming the formula.
+- **`<>` between two strings is wrong**: `DiferentCondition` coerces both to numbers.
+  `<>` with numbers works.
+- **Error literals are plain strings**: `#N/A` evaluates to `"#N/A"`, and `IFERROR` only
+  catches Python exceptions, not those values.
 - **No cycle detection.** Circular references recurse until Python's recursion limit.
 - **`detach()` is a no-op**, so observers are never removed.
 - Dates, formatting, charts, pivot tables and macros are out of scope. This computes

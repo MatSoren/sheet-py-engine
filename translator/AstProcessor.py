@@ -1,5 +1,6 @@
 import logging
 import ast
+import re
 from operations.operation_factory import OperationTypes, OperationFactory
 from SheetCell import SheetCell
 from Sheet import SheetsManager
@@ -11,7 +12,39 @@ bin_ope_dict = {
     "SUB": OperationTypes.BinarySub,
     "MULT": OperationTypes.BinaryMul,
     "DIV": OperationTypes.BinaryDiv,
+    "POW": OperationTypes.BinaryPow,
+    "BITOR": OperationTypes.Concat,
 }
+
+REF_MARKER = "___ref___"
+RANGE_MARKER = "___range___"
+
+
+def normalize_sheet_name(name):
+    """The name a sheet is registered under in the SheetsManager.
+
+    Every non-alphanumeric ASCII char becomes '_' ('Cost Report' -> 'Cost_Report'), so it can
+    live inside a Python identifier. ASCII only on purpose: ast NFKC-normalizes identifiers,
+    which could make a unicode name stop matching its registry key.
+    """
+    return re.sub(r"\W", "_", name, flags=re.ASCII)
+
+
+def encode_ref(sheet, ref):
+    """('2024 Ventas', 'A1:B2') -> '_2024_Ventas___ref___A1___range___B2', a valid identifier.
+
+    The leading '_' covers sheet names starting with a digit. decode_ref() undoes this.
+    """
+    ref = ref.replace(":", RANGE_MARKER)
+    if sheet is None:
+        return ref
+    return f"_{normalize_sheet_name(sheet)}{REF_MARKER}{ref}"
+
+
+def decode_ref(identifier):
+    """Inverse of encode_ref(): returns (normalized sheet name or None, 'A1' or 'A1:B2')."""
+    sheet, _, ref = identifier.rpartition(REF_MARKER)
+    return (sheet[1:] if sheet else None), ref.replace(RANGE_MARKER, ":")
 
 
 formula_dict = {
@@ -46,21 +79,15 @@ class OperationProcessor(ast.NodeVisitor):
 
     def visit_Name(self, node):
         cell: SheetCell = None
-        cell_name = node.id
-        sheet_name = ""
+        sheet_name, cell_name = decode_ref(node.id)
         current_sheet = self.current_sheet
+        if sheet_name is not None:
+            current_sheet = sheet_manager.get_sheet(sheet_name)
+        else:
+            sheet_name = ""
 
-        if node.id.find("___range___") != -1:
-            if node.id.find("___ref___") != -1:
-                sheet_name = str(node.id).split("___ref___")[0]
-                node.id = node.id.replace("___range___", ":")
-                node.id = str(node.id).replace(f"{sheet_name}___ref___", "")
-                current_sheet = sheet_manager.get_sheet(sheet_name)
-            range_operation = OperationFactory.get_instance(
-                OperationTypes.Range, node.id.replace("___range___", ":"), current_sheet
-            )
-
-            initial, final = node.id.replace("___range___", ":").split(":")
+        if ":" in cell_name:
+            initial, final = cell_name.split(":")
             initial_row, initial_col = utils.coordinate_to_tuple(initial)
             final_row, final_col = utils.coordinate_to_tuple(final)
             cells_to_attach = []
@@ -78,15 +105,12 @@ class OperationProcessor(ast.NodeVisitor):
 
             for cell_to_attach in cells_to_attach:
                 cell_to_attach.attach(self.current_cell)
-            return range_operation
-        else:
-            if node.id.find("___ref___") != -1:
-                sheet_name, cell_name = str(node.id).split("___ref___")
-                current_sheet = sheet_manager.get_sheet(sheet_name)
+            # built after the missing cells exist, or Range would hold None for them
+            return OperationFactory.get_instance(
+                OperationTypes.Range, cell_name, current_sheet
+            )
 
-                cell = current_sheet.get_cell(cell_name)
-            else:
-                cell = current_sheet.get_cell(cell_name)
+        cell = current_sheet.get_cell(cell_name)
 
         if cell is None:
             cell = SheetCell()
@@ -106,8 +130,23 @@ class OperationProcessor(ast.NodeVisitor):
 
         return OperationFactory.get_instance(op_type, left, comparator)
 
+    def visit_UnaryOp(self, node):
+        operand = super().visit(node.operand)
+        if isinstance(node.op, ast.USub):
+            return OperationFactory.get_instance(
+                OperationTypes.BinaryMul,
+                OperationFactory.get_instance(OperationTypes.Value, -1),
+                operand,
+            )
+        if isinstance(node.op, ast.UAdd):
+            return operand
+        raise ValueError(f"unsupported unary operator: {type(node.op).__name__}")
+
     def visit_Eq(self, node):
         return OperationTypes.EqualCondition
+
+    def visit_NotEq(self, node):
+        return OperationTypes.DiferentCondition
 
     def visit_Lt(self, node):
         return OperationTypes.LessCondition

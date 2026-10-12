@@ -25,7 +25,7 @@ def parse_target(target):
 
 
 def resolve(manager, sheet_name, coordinate):
-    sheet = manager.get_sheet(sheet_name)
+    sheet = manager.get_sheet(translator.normalize_sheet_name(sheet_name))
     if sheet is None:
         sys.exit(f"no such sheet: {sheet_name!r}")
     cell = sheet.get_cell(coordinate)
