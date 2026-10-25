@@ -358,6 +358,18 @@ EVALUATION_CASES = [
     ("=$A$1+1", 11),
     ("=A$1*$A2", 200),
     ("=SUM($A$1:$A$3)", 60),
+    # SUM: any number of arguments; referenced cells only count numbers, typed ones convert
+    ("=SUM(A1,A2)", 30),
+    ("=SUM(A1:A2,5)", 35),
+    ("=SUM(A1:A3,D1,1)", 63.5),
+    ("=SUM(A1,)", 10),
+    ("=SUM(C1)", 0),
+    ("=SUM(C2)", 0),
+    ("=SUM(B1:B2)", 0),
+    ('=SUM("5",1)', 6),
+    ("=SUM(TRUE,1)", 2),
+    ('=SUM("abc")', "#VALUE!"),
+    ("=SUM(A1,E1)", "#N/A"),
     # arithmetic and precedence
     ("=1+2*3", 7),
     ("=(1+2)*3", 9),

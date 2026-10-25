@@ -11,8 +11,6 @@ import math
 
 from decimal import Decimal, ROUND_HALF_UP
 
-from collections.abc import Iterable
-
 """
 Operaciones:
 - COUNTIF
@@ -563,21 +561,24 @@ class Sum(Operation):
     def __str__(self):
         return "Sum"
 
-    def __init__(self, cell_range):
-        self.range = cell_range
+    def __init__(self, *args):
+        self.args = args
 
     def operate(self):
-        sum_calc = 0
-        _range = self.range.operate()
-        if not isinstance(_range, Iterable):
-            return _range
-        for cell in _range:
-            if cell is None:
-                continue
-            cell_value = raise_if_error(cell.calculated_value)
-            if isinstance(cell_value, (int, float, complex)):
-                sum_calc += cell_value
-        return sum_calc
+        total = 0
+        for arg in self.args:
+            if isinstance(arg, (Range, Reference)):
+                # referenced cells: only numbers count; text, logicals and blanks are skipped
+                cells = arg.operate() if isinstance(arg, Range) else [arg.cell]
+                for cell in cells:
+                    value = raise_if_error(cell.calculated_value)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        total += value
+            else:
+                # typed arguments: TRUE is 1, "5" is 5, any other text is #VALUE!
+                value = arg.operate()
+                total += float(value) if isinstance(value, str) else (value or 0)
+        return total
 
 
 class Hlookup(Operation):
