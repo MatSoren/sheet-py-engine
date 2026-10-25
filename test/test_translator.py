@@ -50,6 +50,10 @@ class TestReferences(TranslationCase):
             ("=SUM(A1:B2)", "SUM(A1___range___B2)"),
             ("=SUM($A$1:$B$2)", "SUM(A1___range___B2)"),
             ("=SUM(A$1:$B2)", "SUM(A1___range___B2)"),
+            ("=SUM(A:A)", "SUM(A___range___A)"),
+            ("=SUM($A:$B)", "SUM(A___range___B)"),
+            ("=SUM(1:2)", "SUM(___ref___1___range___2)"),
+            ("=SUM(Hoja!1:1)", "SUM(_Hoja___ref___1___range___1)"),
         ])
 
     def test_other_sheet(self):
@@ -304,6 +308,8 @@ class TestSheetNameEncoding(unittest.TestCase):
             ("2024 Ventas", "B7:C9"),
             ("a ref b", "A1"),
             ("x___ref___y", "A1:B2"),
+            (None, "A:B"),
+            (None, "1:2"),
         ]
         for sheet, ref in cases:
             with self.subTest(sheet=sheet, ref=ref):
@@ -370,6 +376,13 @@ EVALUATION_CASES = [
     ("=SUM(TRUE,1)", 2),
     ('=SUM("abc")', "#VALUE!"),
     ("=SUM(A1,E1)", "#N/A"),
+    # whole columns and rows, up to the sheet's last used row / column
+    ("=SUM(A:A)", 60),
+    ("=SUM($A:$B)", 60),
+    ("=COUNTIF(A:A,\">10\")", 2),
+    ("=SUM('Costos-Fijos'!A:A)", 6),
+    ("=SUM('Costos-Fijos'!2:3)", 5),
+    ("=SUM('2024 Ventas'!1:2)", 300),
     # arithmetic and precedence
     ("=1+2*3", 7),
     ("=(1+2)*3", 9),
@@ -715,6 +728,36 @@ class TestPropagation(unittest.TestCase):
         # the criterion is re-read on every update, not frozen at load time
         manager.get_sheet("Later").get_cell("B1").set_operation(Value(">=1"))
         self.assertEqual(value(manager, "Main", "A3"), 2)
+
+    def test_whole_column_and_row_include_cells_added_later(self):
+        manager = load({
+            "Main": {
+                "A1": "=SUM(B:B)",
+                "A2": "=SUM(Data!1:1)",
+                "A3": '=HLOOKUP("k",Data!1:2,2,FALSE)',
+                "B1": 1,
+                "B2": 2,
+            },
+            "Data": {"A1": 1, "A2": 100},
+        })
+        self.assertEqual(value(manager, "Main", "A1"), 3)
+        self.assertEqual(value(manager, "Main", "A2"), 1)
+        self.assertEqual(value(manager, "Main", "A3"), "#N/A")
+
+        def write(sheet_name, coordinate, new_value):
+            cell = SheetCell()
+            manager.get_sheet(sheet_name).set_cell(coordinate, cell)
+            cell.set_operation(Value(new_value))
+
+        write("Main", "B50", 10)  # far below the last row the sheet had when it loaded
+        self.assertEqual(value(manager, "Main", "A1"), 13)
+        manager.get_sheet("Main").get_cell("B1").set_operation(Value(5))
+        self.assertEqual(value(manager, "Main", "A1"), 17)
+        write("Data", "Z1", 4)
+        self.assertEqual(value(manager, "Main", "A2"), 5)
+        write("Data", "C1", "k")
+        write("Data", "C2", 7)
+        self.assertEqual(value(manager, "Main", "A3"), 7)
 
     def test_text_follows_its_source(self):
         manager = load({

@@ -41,7 +41,7 @@ def encode_ref(sheet, ref):
     """
     ref = ref.replace(":", RANGE_MARKER)
     if sheet is None:
-        return ref
+        return ref if ref[0].isalpha() else REF_MARKER + ref  # a row range (1:1) can't start one
     return f"_{normalize_sheet_name(sheet)}{REF_MARKER}{ref}"
 
 
@@ -99,27 +99,9 @@ class OperationProcessor(ast.NodeVisitor):
             sheet_name = ""
 
         if ":" in cell_name:
-            initial, final = cell_name.split(":")
-            initial_row, initial_col = utils.coordinate_to_tuple(initial)
-            final_row, final_col = utils.coordinate_to_tuple(final)
-            cells_to_attach = []
-            for row in range(initial_row, final_row + 1):
-                for col in range(initial_col, final_col + 1):
-                    cell = current_sheet.get_cell(
-                        utils.get_column_letter(col) + str(row)
-                    )
-                    if cell is None:
-                        cell = SheetCell()
-                        current_sheet.set_cell(
-                            utils.get_column_letter(col) + str(row), cell
-                        )
-                    cells_to_attach.append(cell)
-
-            for cell_to_attach in cells_to_attach:
-                cell_to_attach.attach(self.current_cell)
-            # built after the missing cells exist, or Range would hold None for them
+            # Range attaches the formula to every cell it covers, blank or not
             return OperationFactory.get_instance(
-                OperationTypes.Range, cell_name, current_sheet
+                OperationTypes.Range, cell_name, current_sheet, self.current_cell
             )
 
         cell = current_sheet.get_cell(cell_name)

@@ -112,7 +112,8 @@ propagates through every formula that uses it until `IFERROR` catches it, as in 
 compares equal to its code, so `cell.calculated_value == "#N/A"` works.
 
 **References** — same sheet (`A1`), absolute (`$A$1`), cross-sheet (`Sheet!A1`,
-`'2024 Ventas'!A1`), ranges (`A1:B4`, `'Costos-Fijos'!A1:B4`)
+`'2024 Ventas'!A1`), ranges (`A1:B4`, `'Costos-Fijos'!A1:B4`), whole columns and rows
+(`A:A`, `1:3`; they cover the sheet's used area, including cells written after loading)
 
 **Functions** — `SUM`, `IF`, `AND`, `OR`, `COUNTIF`, `IFERROR`, `TEXT`, `TODAY`, `MROUND`,
 `ROUNDUP`, `ROUNDDOWN`, `HLOOKUP`, in any case (`if(`, `Sum(`)

@@ -11,6 +11,8 @@ import math
 
 from decimal import Decimal, ROUND_HALF_UP
 
+from types import SimpleNamespace
+
 """
 Operaciones:
 - COUNTIF
@@ -109,23 +111,57 @@ class Reference(Operation):
         return raise_if_error(self.cell.calculated_value)
 
 
+BLANK = SimpleNamespace(calculated_value=None)  # a position of an open range with no cell
+
+
 class Range(Operation):
     def __str__(self):
         return "Range"
 
-    def __init__(self, sheet_range, current_sheet):
-        initial, final = sheet_range.split(":")
-        initial_row, initial_col = utils.coordinate_to_tuple(initial)
-        final_row, final_col = utils.coordinate_to_tuple(final)
-        self.width = final_col - initial_col + 1
+    def __init__(self, sheet_range, current_sheet, observer):
+        self.sheet = current_sheet
+        self.observer = observer
+        # (first column, first row, last column, last row); None on the open side of A:A / 1:1
+        self.bounds = utils.range_boundaries(sheet_range)
+        if None in self.bounds:
+            # Sheet.set_cell attaches the cells that come later
+            current_sheet.open_ranges.append(self)
+            for coordinate, cell in current_sheet.elements.items():
+                if self.contains(*utils.coordinate_to_tuple(coordinate)):
+                    cell.attach(observer)
+            self.cell_range = None  # built on demand; Sheet.set_cell drops it when it goes stale
+        else:
+            # blank cells fill the gaps, so values written there later reach the formula
+            first_col, first_row, last_col, last_row = self.bounds
+            self.cell_range = []
+            for row in range(first_row, last_row + 1):
+                for col in range(first_col, last_col + 1):
+                    cell = current_sheet.cell_at(utils.get_column_letter(col) + str(row))
+                    cell.attach(observer)
+                    self.cell_range.append(cell)
 
-        self.cell_range = [
-            current_sheet.get_cell(utils.get_column_letter(col) + str(row))
-            for row in range(initial_row, final_row + 1)
-            for col in range(initial_col, final_col + 1)
-        ]
+    def corners(self):
+        """The bounds, with an open side ending at the sheet's last used row / column."""
+        first_col, first_row, last_col, last_row = self.bounds
+        return first_col or 1, first_row or 1, last_col or self.sheet.max_column, last_row or self.sheet.max_row
+
+    @property
+    def width(self):
+        first_col, _, last_col, _ = self.corners()
+        return last_col - first_col + 1
+
+    def contains(self, row, column):
+        first_col, first_row, last_col, last_row = self.bounds
+        return (first_col or 1) <= column <= (last_col or column) and (first_row or 1) <= row <= (last_row or row)
 
     def operate(self):
+        if self.cell_range is None:
+            first_col, first_row, last_col, last_row = self.corners()
+            self.cell_range = [
+                self.sheet.get_cell(utils.get_column_letter(col) + str(row)) or BLANK
+                for row in range(first_row, last_row + 1)
+                for col in range(first_col, last_col + 1)
+            ]
         return self.cell_range
 
 
