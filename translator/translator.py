@@ -5,6 +5,7 @@ from translator.AstProcessor import OperationProcessor, encode_error, encode_ref
 from operations.operations import ExcelError
 from openpyxl.formula.tokenizer import Tokenizer, Token
 import ast
+import logging
 import re
 import sys
 
@@ -219,18 +220,22 @@ formule_generators = {
 def generate_formula_cell(cell, sheet_name):
     current_sheet: Sheet = sheet_manager.get_sheet(sheet_name)
 
-    tree = ast.parse(formula_to_python(str(cell.value)))
     current_cell = current_sheet.get_cell(cell.coordinate)
 
     if current_cell is None:
         current_cell = SheetCell()
 
         current_sheet.set_cell(cell.coordinate, current_cell)
-    # TODO astprocesor ya tiene la expresion para parsear, deberá retornar la operacion a asignar en la celda
     astProcessor.set_current_cell(current_cell)
     astProcessor.set_current_sheet(current_sheet)
 
-    operation = astProcessor.visit(tree)
+    # a formula the engine can't build is an error in its own cell, not a failed load
+    try:
+        tree = ast.parse(formula_to_python(str(cell.value)))
+        operation = astProcessor.visit(tree)
+    except (SyntaxError, ValueError, TypeError) as error:
+        logging.warning("cannot evaluate %s!%s %s: %s", sheet_name, cell.coordinate, cell.value, error)
+        operation = OperationFactory.get_instance(OperationTypes.Value, ExcelError("#VALUE!"))
 
     current_cell.operation = operation  # computed by evaluate_in_dependency_order()
 

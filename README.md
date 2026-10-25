@@ -157,7 +157,8 @@ python -m unittest test.test_translator -v
   same registry as the first.
 - **Intersection operator, array constants and 3D references** (`=A1:A3 B1:B3`,
   `={1,2,3}`, `=SUM(Sheet1:Sheet3!A1)`) are not
-  supported; they raise a `ValueError` naming the formula.
+  supported. Like any formula the engine can't build, the cell becomes `#VALUE!` (an
+  unknown function, `#NAME?`) with a warning naming it, and the rest of the workbook loads.
 - **Circular references** load with a warning naming the cycle, but their values are not
   meaningful; writing to a cell inside a cycle logs the same warning.
 - **`detach()` is a no-op**, so observers are never removed.

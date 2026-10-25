@@ -182,8 +182,9 @@ class OperationProcessor(ast.NodeVisitor):
 
         func_name = node.func.id
         func_type = formula_dict.get(func_name.upper())
-        if func_type == None:
+        if func_type is None:
             logging.warning("unrecognised function: %s", func_name)
+            return OperationFactory.get_instance(OperationTypes.Value, ExcelError("#NAME?"))
         return OperationFactory.get_instance(func_type, *args)
 
     def visit_Module(self, node):

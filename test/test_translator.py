@@ -625,6 +625,12 @@ EVALUATION_CASES = [
     # whitespace
     ("= A1 + 1", 11),
     ("=SUM( A1:A3 )", 60),
+    # a formula the engine can't build is an error in its own cell; the rest still loads
+    ("=NOPE(A1)", "#NAME?"),
+    ("=NOPE(A1)+1", "#NAME?"),
+    ("=IFERROR(NOPE(A1),0)", 0),
+    ("={1,2}", "#VALUE!"),
+    ("=A1:A3 A1:A3", "#VALUE!"),
 ]
 
 
