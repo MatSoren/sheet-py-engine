@@ -14,20 +14,42 @@ def evaluate_in_dependency_order(cells):
     Used when loading (translate() only assigns operations) and on every update(): letting
     each cell notify its observers recursively would recompute a cell once per path that
     reaches it, which grows exponentially with chained diamonds.
+
+    `cells` must hold every observer of each of its cells, as both callers guarantee.
+    Kahn's algorithm by hand: graphlib does the same with more bookkeeping per edge, and a
+    large range is one edge per cell in it.
     """
+    pending_inputs = dict.fromkeys(cells, 0)
+    for cell in cells:
+        for observer in cell.observers:
+            pending_inputs[observer] += 1
+    ready = [cell for cell, count in pending_inputs.items() if count == 0]
+    order = []
+    while ready:
+        cell = ready.pop()
+        order.append(cell)
+        for observer in cell.observers:
+            pending_inputs[observer] -= 1
+            if pending_inputs[observer] == 0:
+                ready.append(observer)
+    if len(order) < len(pending_inputs):
+        logging.warning("circular reference, values may be wrong: %s", find_cycle(cells))
+        order = cells  # ponytail: one pass in load order; Excel would iterate or show 0
+    for cell in order:
+        cell.recalculate()
+
+
+def find_cycle(cells):
+    """'Main!A1 -> Main!A2 -> Main!A1', for the warning; only runs when there is one."""
     sorter = graphlib.TopologicalSorter()
     for cell in cells:
         sorter.add(cell)
         for observer in cell.observers:
             sorter.add(observer, cell)
     try:
-        order = list(sorter.static_order())
+        sorter.prepare()
     except graphlib.CycleError as error:
-        cycle = " -> ".join(f"{cell.sheet}!{cell.coordinate}" for cell in error.args[1])
-        logging.warning("circular reference, values may be wrong: %s", cycle)
-        order = cells  # ponytail: one pass in load order; Excel would iterate or show 0
-    for cell in order:
-        cell.recalculate()
+        return " -> ".join(f"{cell.sheet}!{cell.coordinate}" for cell in error.args[1])
 
 
 class Observer(ABC):
@@ -54,7 +76,7 @@ class Subject(ABC):
 
 class SheetCell(Observer, Subject, Operation):
     def __init__(self, operation=OperationTypes.NoneOperation, *args, **kwargs):
-        self.observers = []
+        self.observers = {}  # dict as an ordered set: attach() checks membership in O(1)
         self.operation = OperationFactory.get_instance(operation, *args)
         self.recalculate()
         self.coordinate = ""
@@ -69,8 +91,8 @@ class SheetCell(Observer, Subject, Operation):
     def set_sheet(self, sheet):
         self.sheet = sheet        
     def attach(self, observer):
-        if self.observers.count(observer) == 0:
-            self.observers.append(observer)
+        if observer not in self.observers:
+            self.observers[observer] = None
         else:
             logging.debug("observer already attached to %s", self)
 
