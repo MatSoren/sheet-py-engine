@@ -401,6 +401,10 @@ EVALUATION_CASES = [
     ('=TRUE>"z"', True),
     ("=A2<=A1", False),
     ("=TODAY()>A1", True),
+    # chained comparisons fold left to right: (1<2)<3 is TRUE<3
+    ("=1<2<3", False),
+    ("=3>2>1", True),
+    ("=1=1=TRUE", True),
     # a blank cell compares as 0, "" or FALSE
     ("=Z99=0", True),
     ('=Z99=""', True),

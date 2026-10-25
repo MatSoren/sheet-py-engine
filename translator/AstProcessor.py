@@ -134,13 +134,13 @@ class OperationProcessor(ast.NodeVisitor):
         return OperationFactory.get_instance(OperationTypes.Reference, cell)
 
     def visit_Compare(self, node):
-        left = super().visit(node.left)
-
-        op_type = super().visit(node.ops[0])
-
-        comparator = super().visit(node.comparators[0])
-
-        return OperationFactory.get_instance(op_type, left, comparator)
+        # Python reads 1<2<3 as 1<2 and 2<3; Excel folds left to right: (1<2)<3
+        result = super().visit(node.left)
+        for op, comparator in zip(node.ops, node.comparators):
+            result = OperationFactory.get_instance(
+                super().visit(op), result, super().visit(comparator)
+            )
+        return result
 
     def visit_UnaryOp(self, node):
         operand = super().visit(node.operand)
